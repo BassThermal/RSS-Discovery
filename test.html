@@ -315,7 +315,6 @@
     <aside class="app-sidebar">
       <div class="sidebar-panel">
         <div class="brand-title">RSS Discovery</div>
-        <div class="tiny">Single-file utility</div>
       </div>
 
       <div class="sidebar-panel nav-list">
@@ -452,6 +451,7 @@
   <script>
     const state = {
       mode: 'discover',
+      runtime: null,
       session: {
         runId: 0,
         running: false,
@@ -479,6 +479,7 @@
     const FEED_GUESSES = ['/feed', '/feed.xml', '/rss', '/rss.xml', '/atom.xml', '/index.xml', '/feed.json'];
     const CANDIDATE_HINTS = /rss|feed|atom|xml|jsonfeed|subscribe/i;
     const BINARY_EXT = /\.(png|jpe?g|gif|webp|svg|ico|pdf|zip|gz|mp4|mp3|avi|mov|woff2?|ttf)(\?|$)/i;
+    const BRIDGE_API_VERSION = 1;
 
     const els = {
       navButtons: document.querySelectorAll('.nav-btn'),
@@ -600,7 +601,61 @@
       return msg;
     }
 
-    async function fetchText(url, runId, stage) {
+    function nativeRuntimeAvailable() {
+      return Boolean(window.chrome?.webview?.postMessage);
+    }
+
+    function createNativeRuntime() {
+      const pending = new Map();
+      let seq = 0;
+      const webview = window.chrome.webview;
+
+      webview.addEventListener('message', event => {
+        const msg = event?.data || {};
+        if (!msg || !msg.correlationId || !pending.has(msg.correlationId)) return;
+        const req = pending.get(msg.correlationId);
+        pending.delete(msg.correlationId);
+        if (msg.error) req.reject(new Error(msg.error.message || String(msg.error)));
+        else req.resolve(msg.payload || {});
+      });
+
+      async function call(op, payload) {
+        const correlationId = `rssd-${Date.now()}-${++seq}`;
+        return await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            pending.delete(correlationId);
+            reject(new Error(`native bridge timeout (${op})`));
+          }, 25000);
+          pending.set(correlationId, {
+            resolve: (value) => {
+              clearTimeout(timer);
+              resolve(value);
+            },
+            reject: (error) => {
+              clearTimeout(timer);
+              reject(error);
+            }
+          });
+          webview.postMessage({ channel: 'rss-discovery', apiVersion: BRIDGE_API_VERSION, correlationId, op, payload });
+        });
+      }
+
+      return { mode: 'native', call };
+    }
+
+    function createBrowserRuntime() {
+      return { mode: 'browser' };
+    }
+
+    function getDiscoveryRuntime() {
+      if (state.runtime) return state.runtime;
+      state.runtime = nativeRuntimeAvailable() ? createNativeRuntime() : createBrowserRuntime();
+      const pathLabel = state.runtime.mode === 'native' ? 'native bridge' : 'browser fallback';
+      log('RUNTIME', `Discovery transport: ${pathLabel}`, state.runtime.mode === 'native' ? 'ok' : 'warn');
+      return state.runtime;
+    }
+
+    async function fetchTextBrowser(url, runId, stage) {
       if (!isCurrentRun(runId)) return null;
       const controller = createController();
       log('FETCH', `GET ${url}`);
@@ -617,6 +672,40 @@
         log('ERROR', `${stage} ${explainFetchError(err)} ${url}`, 'err');
         return null;
       }
+    }
+
+    function normalizeBridgeItem(item, fallbackUrl, idx) {
+      return {
+        id: item?.id || `${fallbackUrl}#n${idx}`,
+        title: (item?.title || 'Untitled item').trim(),
+        url: normalizeUrl(item?.url || '', fallbackUrl) || fallbackUrl,
+        excerpt: String(item?.excerpt || '').replace(/\s+/g, ' ').trim().slice(0, 360),
+        publishedAt: parseDateMaybe(item?.publishedAt),
+        author: item?.author || ''
+      };
+    }
+
+    function normalizeBridgeFeedRecord(raw, sourceSeed) {
+      const feedUrl = normalizeUrl(raw?.url || '');
+      if (!feedUrl) return null;
+      const items = Array.isArray(raw?.items) ? raw.items.slice(0, 80).map((item, idx) => normalizeBridgeItem(item, feedUrl, idx)) : [];
+      const latest = items.find(it => it.title || it.url) || null;
+      const latestAt = latest?.publishedAt || null;
+      return {
+        id: raw?.id || `f-${btoa(feedUrl).replace(/=+$/g, '').slice(-12)}`,
+        sourceSeed: normalizeUrl(raw?.sourceSeed || sourceSeed || feedUrl) || feedUrl,
+        sourceDomain: getDomain(raw?.sourceSeed || sourceSeed || feedUrl),
+        title: (raw?.title || getDomain(feedUrl) || 'Feed').trim(),
+        url: feedUrl,
+        format: (raw?.format || 'rss').toLowerCase(),
+        state: raw?.state === 'kept' || raw?.state === 'excluded' ? raw.state : 'candidate',
+        latestTitle: latest?.title || raw?.latestTitle || 'No items detected',
+        latestUrl: latest?.url || normalizeUrl(raw?.latestUrl || '', feedUrl) || '',
+        latestAt,
+        latestAge: latestAt ? formatAge(latestAt) : 'unknown',
+        items,
+        discoveredAt: Date.now()
+      };
     }
 
     function extractText(node, selector) {
@@ -729,9 +818,9 @@
       };
     }
 
-    async function validateFeed(candidateUrl, sourceSeed, runId) {
+    async function validateFeedInBrowser(candidateUrl, sourceSeed, runId) {
       if (state.session.feedCache.has(candidateUrl)) return state.session.feedCache.get(candidateUrl);
-      const fetched = await fetchText(candidateUrl, runId, 'feed');
+      const fetched = await fetchTextBrowser(candidateUrl, runId, 'feed');
       if (!fetched || !isCurrentRun(runId)) return null;
       log('PARSE', `Inspect feed payload ${candidateUrl}`);
       const parsed = parseFeedText(fetched.text, candidateUrl, fetched.contentType);
@@ -774,9 +863,9 @@
       return [...candidates];
     }
 
-    async function discoverFeedsFromSeed(seedUrl, runId) {
+    async function discoverFeedsFromSeedInBrowser(seedUrl, runId) {
       if (!isCurrentRun(runId)) return [];
-      const page = state.session.pageCache.get(seedUrl) || await fetchText(seedUrl, runId, 'page');
+      const page = state.session.pageCache.get(seedUrl) || await fetchTextBrowser(seedUrl, runId, 'page');
       if (!page || !isCurrentRun(runId)) {
         log('ERROR', `Seed unavailable ${seedUrl}`, 'err');
         return [];
@@ -794,12 +883,89 @@
       const valid = [];
       for (const candidate of candidates) {
         if (!isCurrentRun(runId)) break;
-        const rec = await validateFeed(candidate, seedUrl, runId);
+        const rec = await validateFeedInBrowser(candidate, seedUrl, runId);
         if (rec) valid.push(rec);
       }
 
       if (!valid.length) log('REJECT', `No valid feeds resolved for ${seedUrl}`, 'warn');
       return valid;
+    }
+
+    async function discoverViaBrowserFetch(seeds, runId) {
+      log('DISCOVER', 'Using browser fallback transport', 'warn');
+      const dedupe = new Map();
+      for (let i = 0; i < seeds.length; i++) {
+        const seed = seeds[i];
+        if (!isCurrentRun(runId)) break;
+        const valid = await discoverFeedsFromSeedInBrowser(seed, runId);
+        if (!isCurrentRun(runId)) break;
+        valid.forEach(feed => dedupe.set(feed.url, feed));
+        log('DONE', `Seed ${i + 1}/${seeds.length} completed`, 'ok');
+      }
+      return { feeds: [...dedupe.values()] };
+    }
+
+    async function discoverViaNativeBridge(runtime, seeds, runId) {
+      log('DISCOVER', 'Using native bridge transport', 'ok');
+      const payload = await runtime.call('discoverFeeds', {
+        seeds,
+        options: { maxDepth: 1, maxPagesPerSeed: 24 }
+      });
+      if (!isCurrentRun(runId)) return { feeds: [] };
+      const bridgeLogs = Array.isArray(payload.logs) ? payload.logs : [];
+      bridgeLogs.forEach(row => log(row.code || 'NATIVE', row.message || '', row.level === 'error' ? 'err' : row.level === 'warn' ? 'warn' : 'ok'));
+      const dedupe = new Map();
+      (payload.feeds || []).forEach(raw => {
+        const record = normalizeBridgeFeedRecord(raw, raw?.sourceSeed);
+        if (record) dedupe.set(record.url, record);
+      });
+      return { feeds: [...dedupe.values()] };
+    }
+
+    async function loadFeedItemsViaBrowserFetch(feeds) {
+      const nextFeeds = [];
+      for (const feed of feeds) {
+        const fetched = await fetch(feed.url).then(async res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return { text: await res.text(), contentType: res.headers.get('content-type') || '' };
+        }).catch(err => {
+          log('ERROR', `reader ${explainFetchError(err)} ${feed.url}`, 'err');
+          return null;
+        });
+        if (!fetched) {
+          nextFeeds.push(feed);
+          continue;
+        }
+        const parsed = parseFeedText(fetched.text, feed.url, fetched.contentType);
+        if (!parsed) {
+          log('REJECT', `Reader reload not parseable ${feed.url}`, 'warn');
+          nextFeeds.push(feed);
+          continue;
+        }
+        const record = feedRecordFromParsed(parsed, feed.url, feed.sourceSeed);
+        record.id = feed.id;
+        record.state = feed.state;
+        nextFeeds.push(record);
+      }
+      return nextFeeds;
+    }
+
+    async function loadFeedItemsViaNativeBridge(runtime, feeds) {
+      const payload = await runtime.call('loadReaderItems', {
+        feeds: feeds.map(feed => ({ id: feed.id, url: feed.url, sourceSeed: feed.sourceSeed, title: feed.title }))
+      });
+      const byUrl = new Map();
+      (payload.feeds || []).forEach(raw => {
+        const normalized = normalizeBridgeFeedRecord(raw, raw?.sourceSeed);
+        if (normalized) byUrl.set(normalized.url, normalized);
+      });
+      return feeds.map(feed => {
+        const refreshed = byUrl.get(feed.url);
+        if (!refreshed) return feed;
+        refreshed.id = feed.id;
+        refreshed.state = feed.state;
+        return refreshed;
+      });
     }
 
     function deriveReaderSourcesFromFeeds(feeds) {
@@ -1133,14 +1299,37 @@
     function refreshReaderStatus() {
       if (state.mode !== 'reader') return;
       const visible = getFilteredHeadlines().length;
-      els.toolbarContext.textContent = 'Loaded';
+      els.toolbarContext.textContent = 'Reader active';
       els.toolbarSecondary.textContent = `${visible} visible stories`;
       els.statusLeft.textContent = 'READER · Active';
       els.statusRight.textContent = `Loaded ${state.reader.stories.length} · Range ${state.reader.rangeHours}h`;
     }
 
+    async function refreshReaderItemsFromRuntime() {
+      const keptFeeds = state.session.feeds.filter(f => f.state === 'kept');
+      if (!keptFeeds.length) return;
+      const runtime = getDiscoveryRuntime();
+      log('READER', `Loading reader items via ${runtime.mode === 'native' ? 'native bridge' : 'browser fallback'}`, runtime.mode === 'native' ? 'ok' : 'warn');
+      try {
+        const updated = runtime.mode === 'native'
+          ? await loadFeedItemsViaNativeBridge(runtime, keptFeeds)
+          : await loadFeedItemsViaBrowserFetch(keptFeeds);
+        const byId = new Map(updated.map(feed => [feed.id, feed]));
+        state.session.feeds = state.session.feeds.map(feed => byId.get(feed.id) || feed);
+        rebuildReaderData();
+        syncReaderSelection();
+        renderPackList();
+        renderHeadlineList();
+        renderStoryInspector();
+        refreshReaderStatus();
+      } catch (err) {
+        log('ERROR', `Reader load failed ${String(err?.message || err)}`, 'err');
+      }
+    }
+
     async function runDiscoverySession(seeds) {
       clearSession();
+      const runtime = getDiscoveryRuntime();
       state.session.runId += 1;
       const runId = state.session.runId;
       state.session.running = true;
@@ -1148,26 +1337,25 @@
       state.session.seeds = seeds.length;
       setDiscoverStatus('Running', `Seeds ${seeds.length}`);
       log('RUN', `Discovery session started for ${seeds.length} seed(s)`, 'ok');
-
-      const dedupe = new Map();
-      for (let i = 0; i < seeds.length; i++) {
-        const seed = seeds[i];
-        if (!isCurrentRun(runId)) break;
-        const valid = await discoverFeedsFromSeed(seed, runId);
-        if (!isCurrentRun(runId)) break;
-        valid.forEach(feed => dedupe.set(feed.url, feed));
-        state.session.feeds = [...dedupe.values()];
-        if (!state.session.selectedFeedId && state.session.feeds[0]) state.session.selectedFeedId = state.session.feeds[0].id;
-        rebuildReaderData();
-        renderFeedList();
-        renderDiscoverInspector();
-        updateDiscoverMetrics();
-        renderPackList();
-        renderHeadlineList();
-        renderStoryInspector();
-        log('DONE', `Seed ${i + 1}/${seeds.length} completed`, 'ok');
-        setDiscoverStatus('Running', `Processed ${state.session.feeds.length} valid feeds`);
+      let result = { feeds: [] };
+      try {
+        result = runtime.mode === 'native'
+          ? await discoverViaNativeBridge(runtime, seeds, runId)
+          : await discoverViaBrowserFetch(seeds, runId);
+      } catch (err) {
+        log('ERROR', `Discovery transport failed ${String(err?.message || err)}`, 'err');
       }
+      if (!isCurrentRun(runId)) return;
+      state.session.feeds = result.feeds || [];
+      if (!state.session.selectedFeedId && state.session.feeds[0]) state.session.selectedFeedId = state.session.feeds[0].id;
+      rebuildReaderData();
+      renderFeedList();
+      renderDiscoverInspector();
+      updateDiscoverMetrics();
+      renderPackList();
+      renderHeadlineList();
+      renderStoryInspector();
+      setDiscoverStatus('Running', `${state.session.feeds.length} feeds discovered`);
 
       if (!isCurrentRun(runId)) return;
       state.session.running = false;
@@ -1177,7 +1365,7 @@
         setDiscoverStatus('Complete', '0 feeds discovered');
       } else {
         log('DONE', `${state.session.feeds.length} valid feeds discovered`, 'ok');
-        setDiscoverStatus('Complete', `${state.session.feeds.length} discovered`);
+        setDiscoverStatus('Complete', `${state.session.feeds.length} feeds discovered`);
       }
     }
 
@@ -1220,15 +1408,16 @@
       els.clearBtn.addEventListener('click', clearSession);
       els.keepSelectedBtn.addEventListener('click', () => batchSetSelected('kept'));
       els.excludeSelectedBtn.addEventListener('click', () => batchSetSelected('excluded'));
-      els.openReaderBtn.addEventListener('click', () => {
+      els.openReaderBtn.addEventListener('click', async () => {
         const kept = state.session.feeds.filter(f => f.state === 'kept').length;
         log('RUN', kept ? `Open Reader with ${kept} kept feed(s)` : 'Open Reader with no kept feeds', kept ? 'ok' : 'warn');
         syncReaderSelection();
         renderPackList();
         renderHeadlineList();
         renderStoryInspector();
-        refreshReaderStatus();
         setMode('reader');
+        await refreshReaderItemsFromRuntime();
+        refreshReaderStatus();
       });
       els.backDiscoverBtn.addEventListener('click', () => setMode('discover'));
 
