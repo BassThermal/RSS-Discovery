@@ -1,0 +1,10 @@
+{
+  "name": "rss-discovery",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Compact RSS discovery app with local backend proxy",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
