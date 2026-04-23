@@ -24,583 +24,488 @@
       --log-text: #cccccc;
       --ok: #6fdc8c;
       --warn: #ffce6d;
-      --excluded: #ff9c95;
+
+      --font-ui: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+      --r1: 4px;
+      --r2: 6px;
+      --r3: 8px;
+      --rp: 999px;
+
+      --h24: 24px;
+      --h28: 28px;
+      --h30: 30px;
+      --h32: 32px;
+      --h36: 36px;
     }
 
-    * { box-sizing: border-box; }
-
+    * { box-sizing: border-box; min-width: 0; }
+    html, body { height: 100%; }
     body {
       margin: 0;
-      font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      font-size: 12px;
-      color: var(--text);
       background: var(--bg);
-      height: 100vh;
+      color: var(--text);
+      font-family: var(--font-ui);
+      font-size: 12px;
       overflow: hidden;
     }
 
     .app-shell {
+      height: 100%;
       display: grid;
-      grid-template-columns: 180px 1fr;
-      grid-template-rows: 36px 1fr 24px;
-      height: 100vh;
-      gap: 6px;
-      padding: 6px;
-    }
-
-    .sidebar,
-    .toolbar,
-    .workspace,
-    .status-strip {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-    }
-
-    .sidebar {
-      grid-row: 1 / 4;
+      grid-template-columns: 280px 1fr;
+      gap: 8px;
       padding: 8px;
-      display: flex;
-      flex-direction: column;
+    }
+
+    .app-sidebar,
+    .app-toolbar,
+    .app-status,
+    .pane,
+    .sidebar-panel {
+      border: 1px solid var(--border);
+      border-radius: var(--r2);
+      background: var(--panel);
+    }
+
+    .app-sidebar {
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 8px;
+      background: var(--panel-2);
+      padding: 8px;
+      min-height: 0;
+    }
+
+    .sidebar-panel { padding: 8px; background: transparent; }
+
+    .eyebrow {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--text-2);
+      font-weight: 700;
+    }
+
+    .brand-title { font-size: 20px; font-weight: 800; line-height: 1; margin: 2px 0 4px; }
+    .tiny { font-size: 11px; color: var(--text-2); }
+    .mono { font-family: var(--font-mono); }
+
+    .nav-list { display: grid; gap: 6px; }
+    .nav-btn {
+      border: 1px solid var(--border);
+      height: var(--h30);
+      border-radius: var(--r1);
+      background: var(--panel);
+      color: var(--text-2);
+      text-align: left;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 0 10px;
+      cursor: pointer;
+    }
+    .nav-btn:hover { background: var(--hover); color: var(--text); }
+    .nav-btn.active {
+      border-color: var(--border-strong);
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      box-shadow: inset 2px 0 0 var(--accent);
+      color: var(--text);
+    }
+
+    .mode-panel { display: none; gap: 8px; overflow: auto; padding-right: 2px; }
+    .mode-panel.active { display: grid; }
+
+    .label { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+
+    input, select, textarea, button { font: inherit; color: inherit; }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--border-strong);
+      background: var(--panel);
+      border-radius: var(--r1);
+      min-height: var(--h30);
+      outline: none;
+      padding: 0 9px;
+    }
+    textarea { min-height: 106px; resize: vertical; padding: 8px 9px; }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .stack { display: grid; gap: 8px; }
+
+    .btn {
+      border: 1px solid var(--border-strong);
+      background: var(--panel);
+      border-radius: var(--r1);
+      min-height: var(--h30);
+      padding: 0 9px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn:hover { background: var(--hover); }
+    .btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+    .btn.primary:hover { background: var(--accent-hover); }
+    .btn.danger { background: var(--danger); color: var(--danger-text); border-color: #ff958d; }
+    .btn.micro { min-height: var(--h24); font-size: 11px; }
+
+    .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .metric { border: 1px solid var(--border); border-radius: var(--r1); padding: 6px; background: #1f1f1f; }
+    .metric .k { font-size: 10px; color: var(--muted); text-transform: uppercase; }
+    .metric .v { font-size: 14px; font-weight: 700; margin-top: 3px; }
+
+    .app-main {
+      min-height: 0;
+      display: grid;
+      grid-template-rows: var(--h36) 1fr var(--h24);
       gap: 8px;
     }
 
-    .brand {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.2px;
-      color: var(--accent);
-      border: 1px solid var(--border);
-      background: var(--panel-2);
-      border-radius: 4px;
-      padding: 7px 8px;
-    }
-
-    .nav-group {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .mode-btn {
-      height: 30px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-      background: var(--panel-2);
-      color: var(--text-2);
-      cursor: pointer;
-      text-align: left;
-      padding: 0 10px;
-      font-size: 12px;
-    }
-
-    .mode-btn:hover { background: var(--hover); }
-
-    .mode-btn.active {
-      background: var(--accent);
-      color: var(--accent-text);
-      border-color: #78d4ff;
-      font-weight: 600;
-    }
-
-    .side-block {
-      margin-top: auto;
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 8px;
-      color: var(--muted);
-      line-height: 1.35;
-    }
-
-    .toolbar {
+    .app-toolbar,
+    .app-status {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding: 0 10px;
-      font-size: 11px;
-      color: var(--text-2);
-    }
-
-    .toolbar .title {
-      font-size: 12px;
-      color: var(--text);
-      font-weight: 600;
-    }
-
-    .status-strip {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 10px;
-      font-size: 11px;
-      color: var(--text-2);
       background: var(--panel-2);
+      gap: 8px;
+      flex-wrap: wrap;
     }
 
-    .workspace {
-      padding: 6px;
-      overflow: hidden;
-    }
+    .toolbar-left, .toolbar-right, .status-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .sep { width: 1px; height: 10px; background: var(--border-strong); }
 
-    .mode-pane {
-      display: none;
-      height: 100%;
-      gap: 6px;
-    }
+    .workspace { min-height: 0; display: none; gap: 8px; }
+    .workspace.active { display: grid; }
+    .discover-layout { grid-template-columns: 1.1fr 1.2fr 320px; }
+    .reader-layout { grid-template-columns: 280px 1fr 330px; }
 
-    .mode-pane.active {
-      display: grid;
-    }
+    .pane { min-height: 0; display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
+    .pane.no-toolbar { grid-template-rows: auto 1fr; }
 
-    .discover-layout {
-      grid-template-columns: 350px 1fr 280px;
-    }
-
-    .reader-layout {
-      grid-template-columns: 230px 1fr 330px;
-    }
-
-    .panel {
-      background: var(--panel-2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .panel-head {
-      height: 28px;
+    .pane-head, .pane-toolbar {
+      min-height: var(--h32);
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 8px;
-      color: var(--text-2);
-      font-size: 11px;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-    }
-
-    .panel-body {
-      padding: 8px;
-      overflow: auto;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
       gap: 8px;
+      padding: 6px 10px;
+      background: var(--panel-2);
     }
+    .pane-toolbar { min-height: var(--h36); }
+    .pane-title { font-size: 14px; font-weight: 700; }
+    .pane-meta { font-size: 11px; color: var(--text-2); }
 
-    textarea, input, select {
-      width: 100%;
-      border: 1px solid var(--border);
-      background: #1f1f1f;
-      color: var(--text);
-      border-radius: 4px;
-      font-size: 12px;
-      padding: 6px 8px;
-      outline: none;
-    }
+    .pane-body { min-height: 0; overflow: auto; position: relative; }
 
-    textarea { min-height: 92px; resize: vertical; }
-    input:focus, textarea:focus, select:focus { border-color: var(--border-strong); }
-
-    .controls-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px;
-    }
-
-    .btn-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 6px;
-    }
-
-    button {
-      border: 1px solid var(--border);
-      background: var(--panel);
-      color: var(--text);
-      border-radius: 4px;
-      height: 28px;
-      font-size: 12px;
-      cursor: pointer;
-      padding: 0 8px;
-    }
-
-    button:hover { background: var(--hover); }
-
-    button.primary {
-      background: var(--accent);
-      color: var(--accent-text);
-      border-color: #78d4ff;
-      font-weight: 700;
-    }
-
-    button.primary:hover { background: var(--accent-hover); }
-    button.danger { background: var(--danger); color: var(--danger-text); border-color: #ff938a; }
-
-    .mini-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 6px;
-    }
-
-    .metric {
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      padding: 6px;
-      background: #1f1f1f;
-    }
-
-    .metric .label { color: var(--muted); font-size: 10px; text-transform: uppercase; }
-    .metric .val { font-size: 13px; font-weight: 700; margin-top: 3px; }
-
-    .terminal {
-      flex: 1;
-      min-height: 120px;
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: var(--log-bg);
-      color: var(--log-text);
-      padding: 6px;
-      overflow: auto;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-      font-size: 11px;
-      line-height: 1.4;
-    }
-
-    .log-row {
-      display: grid;
-      grid-template-columns: 56px 54px 1fr;
-      gap: 6px;
-      border-bottom: 1px solid #262626;
-      padding: 2px 0;
-    }
-
-    .log-row:last-child { border-bottom: none; }
-    .log-ts { color: var(--muted); }
-    .log-code { color: var(--accent); }
+    .terminal { background: var(--log-bg); color: var(--log-text); font-family: var(--font-mono); font-size: 11px; }
+    .log-row { display: grid; grid-template-columns: 64px 58px 1fr; padding: 2px 10px; border-bottom: 1px solid #262626; gap: 8px; }
+    .log-code { color: var(--accent); font-weight: 700; }
     .log-code.warn { color: var(--warn); }
     .log-code.err { color: var(--danger); }
     .log-code.ok { color: var(--ok); }
+    .hint { color: var(--muted); padding: 8px 10px; }
 
-    .feed-list, .headline-list, .pack-list {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-height: 0;
-    }
+    .feed-list, .pack-list, .headline-list { display: grid; align-content: start; }
 
-    .feed-row, .headline-row, .pack-row {
-      border: 1px solid var(--border);
-      border-radius: 4px;
-      background: #222;
-      padding: 6px;
+    .feed-row, .pack-row, .headline-row {
+      border-bottom: 1px solid var(--border);
+      padding: 6px 10px;
       cursor: pointer;
       position: relative;
     }
-
-    .feed-row:hover, .headline-row:hover, .pack-row:hover { background: var(--hover); }
-
-    .feed-row.selected, .headline-row.selected, .pack-row.selected {
-      border-color: var(--accent);
-      background: #1f2a31;
+    .feed-row:hover, .pack-row:hover, .headline-row:hover { background: var(--hover); }
+    .feed-row.selected, .pack-row.selected, .headline-row.selected {
+      background: color-mix(in srgb, var(--accent) 14%, transparent);
+      box-shadow: inset 2px 0 0 var(--accent);
     }
 
-    .feed-row.excluded {
-      border-color: #7d4b47;
-      background: #2b2222;
-      opacity: 0.85;
-    }
-
-    .feed-row.kept { border-color: #4e7c56; }
-
-    .row-top {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
+    .feed-row {
+      display: grid;
+      grid-template-columns: 16px 16px 1fr 24px;
       align-items: center;
-      margin-bottom: 4px;
+      gap: 8px;
+      min-height: 58px;
     }
 
-    .row-title {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    .pack-row { display: grid; grid-template-columns: 16px 1fr auto; gap: 8px; min-height: 44px; align-items: center; }
+    .headline-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; min-height: 58px; align-items: center; }
+
+    .feed-row.excluded, .pack-row.disabled { opacity: .58; }
+    .feed-row.kept { border-left: 2px solid #6fdc8c; }
+
+    .dot {
+      width: 16px; height: 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--r1);
+      background: linear-gradient(135deg, #4a4a4a, #2b2b2b);
     }
 
-    .row-sub {
-      color: var(--text-2);
-      font-size: 11px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .badges { display: flex; gap: 4px; flex-wrap: wrap; }
+    .feed-main, .pack-main, .headline-main { display: grid; gap: 3px; }
+    .topline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--text-2); }
+    .domain, .pack-title, .headline-source { color: var(--text); font-weight: 700; }
+    .title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .sub { font-size: 11px; color: var(--text-2); }
+    .url { font-family: var(--font-mono); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     .badge {
       border: 1px solid var(--border);
-      border-radius: 4px;
+      border-radius: var(--rp);
       font-size: 10px;
-      padding: 1px 5px;
-      color: var(--text-2);
-      background: #1d1d1d;
+      min-height: 18px;
+      padding: 0 6px;
+      display: inline-flex;
+      align-items: center;
       text-transform: uppercase;
-      letter-spacing: 0.2px;
+      color: var(--text-2);
     }
+    .badge.state-kept { border-color: #5b8f65; color: var(--ok); }
+    .badge.state-excluded { border-color: #7d4b47; color: #ff9c95; }
+    .badge.type { color: var(--accent); }
 
-    .badge.state-kept { border-color: #4e7c56; color: var(--ok); }
-    .badge.state-excluded { border-color: #7d4b47; color: var(--excluded); }
-    .badge.state-candidate { border-color: #4a4a4a; }
-
-    .section {
+    .row-action {
       border: 1px solid var(--border);
-      border-radius: 4px;
-      background: #1f1f1f;
-      padding: 7px;
-    }
-
-    .section-title {
-      font-size: 10px;
-      color: var(--muted);
-      text-transform: uppercase;
-      margin-bottom: 5px;
-      letter-spacing: 0.2px;
-    }
-
-    .section-line {
+      background: transparent;
       color: var(--text-2);
-      margin-bottom: 3px;
-      word-break: break-word;
+      border-radius: var(--r1);
+      min-height: var(--h24);
+      width: 24px;
+      cursor: pointer;
+      padding: 0;
     }
+    .row-action:hover { background: var(--hover); }
 
-    .section-line strong { color: var(--text); font-weight: 600; }
+    .inspector { padding: 10px; display: grid; gap: 8px; }
+    .block { border: 1px solid var(--border); background: var(--panel-2); border-radius: var(--r2); padding: 8px; display: grid; gap: 4px; }
+    .block .k { font-size: 10px; text-transform: uppercase; color: var(--text-2); letter-spacing: .05em; }
+    .block .v { font-size: 12px; color: var(--text); font-weight: 600; word-break: break-word; }
+    .block .s { font-size: 11px; color: var(--text-2); word-break: break-word; }
 
-    .inline-actions {
-      display: flex;
-      gap: 6px;
-    }
-
-    .inline-actions button {
-      flex: 1;
-      height: 24px;
-      font-size: 11px;
-    }
-
-    .stack { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-
-    .hint { color: var(--muted); font-size: 11px; }
-
-    .hover-preview {
+    .preview {
       position: absolute;
-      left: calc(100% + 8px);
+      left: calc(100% + 6px);
       top: -1px;
-      width: 280px;
-      max-width: 280px;
+      width: 270px;
       border: 1px solid var(--border-strong);
+      border-radius: var(--r2);
       background: #232323;
-      border-radius: 6px;
       padding: 7px;
+      z-index: 10;
       display: none;
-      z-index: 9;
       pointer-events: none;
     }
+    .feed-row:hover .preview, .headline-row:hover .preview { display: block; }
+    .preview .p-title { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+    .preview .p-line { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    .feed-row:hover .hover-preview,
-    .headline-row:hover .hover-preview { display: block; }
+    .hidden { display: none !important; }
 
-    .hover-preview .p-title {
-      font-size: 11px;
-      color: var(--text);
-      margin-bottom: 4px;
-      font-weight: 600;
-    }
-
-    .hover-preview .p-line {
-      color: var(--text-2);
-      font-size: 11px;
-      margin-bottom: 2px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+    @media (max-width: 1380px) {
+      .discover-layout { grid-template-columns: 1fr 1fr; }
+      .discover-inspector-pane { display: none; }
+      .reader-layout { grid-template-columns: 280px 1fr; }
+      .story-pane { display: none; }
     }
   </style>
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">Feed Trace</div>
-      <div class="nav-group">
-        <button class="mode-btn active" data-mode="discover">Discover</button>
-        <button class="mode-btn" data-mode="reader">Reader</button>
+    <aside class="app-sidebar">
+      <div class="sidebar-panel">
+        <div class="eyebrow">BassThermal Utility</div>
+        <div class="brand-title">Feed Trace</div>
+        <div class="tiny">Discovery + curation + chronological reader</div>
       </div>
-      <div class="side-block">
-        Compact workstation prototype for feed discovery and reading.
+
+      <div class="sidebar-panel nav-list">
+        <button class="nav-btn active" data-mode="discover">Discover</button>
+        <button class="nav-btn" data-mode="reader">Reader</button>
+      </div>
+
+      <div class="mode-panel active" data-panel="discover">
+        <div class="sidebar-panel stack">
+          <div class="label">Seed URLs</div>
+          <textarea id="seedInput" placeholder="https://example.com&#10;https://news.example.org"></textarea>
+          <div class="tiny">Supports newline, comma, or space-separated entries.</div>
+        </div>
+
+        <div class="sidebar-panel stack">
+          <div class="label">Discover Filters</div>
+          <div class="row2">
+            <select id="discoverFilter">
+              <option value="all">All states</option>
+              <option value="candidate">Candidates</option>
+              <option value="kept">Kept</option>
+              <option value="excluded">Excluded</option>
+            </select>
+            <input id="discoverSearch" placeholder="Search domain/title/url" />
+          </div>
+        </div>
+
+        <div class="sidebar-panel stack">
+          <div class="label">Run</div>
+          <button class="btn primary" id="startBtn">Start crawl</button>
+          <div class="row2">
+            <button class="btn" id="stopBtn">Stop</button>
+            <button class="btn danger" id="clearBtn">Clear session</button>
+          </div>
+        </div>
+
+        <div class="sidebar-panel metric-grid">
+          <div class="metric"><div class="k">Discovered</div><div class="v" id="metricDiscovered">0</div></div>
+          <div class="metric"><div class="k">Kept</div><div class="v" id="metricKept">0</div></div>
+          <div class="metric"><div class="k">Excluded</div><div class="v" id="metricExcluded">0</div></div>
+        </div>
+      </div>
+
+      <div class="mode-panel" data-panel="reader">
+        <div class="sidebar-panel stack">
+          <div class="label">Sources</div>
+          <input id="readerSourceSearch" placeholder="Search sources" />
+        </div>
+
+        <div class="sidebar-panel stack">
+          <div class="label">Headlines</div>
+          <div class="row2">
+            <input id="headlineSearch" placeholder="Search headline/excerpt" />
+            <select id="rangeSelect">
+              <option value="6">Last 6h</option>
+              <option value="24" selected>Last 24h</option>
+              <option value="72">Last 72h</option>
+              <option value="168">Last 7d</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-panel tiny">
+        Operational first. Compact. Border-led. No dashboard fluff.
       </div>
     </aside>
 
-    <header class="toolbar">
-      <div class="title" id="toolbarTitle">Discover Session</div>
-      <div id="toolbarContext">Idle</div>
-    </header>
-
-    <main class="workspace">
-      <section class="mode-pane discover-layout active" id="discoverPane">
-        <div class="panel">
-          <div class="panel-head">Discover Controls</div>
-          <div class="panel-body">
-            <label class="hint" for="seedInput">Seed URLs (newline, comma, or space separated)</label>
-            <textarea id="seedInput" placeholder="https://example.com\nhttps://news.example.org"></textarea>
-            <div class="controls-row">
-              <select id="discoverFilter">
-                <option value="all">All states</option>
-                <option value="candidate">Candidates</option>
-                <option value="kept">Kept</option>
-                <option value="excluded">Excluded</option>
-              </select>
-              <input id="discoverSearch" placeholder="Filter by domain/title/url" />
-            </div>
-            <div class="btn-row">
-              <button id="startBtn" class="primary">Start crawl</button>
-              <button id="stopBtn">Stop</button>
-              <button id="clearBtn">Clear session</button>
-            </div>
-
-            <div class="mini-grid">
-              <div class="metric"><div class="label">Discovered</div><div class="val" id="metricDiscovered">0</div></div>
-              <div class="metric"><div class="label">Kept</div><div class="val" id="metricKept">0</div></div>
-              <div class="metric"><div class="label">Excluded</div><div class="val" id="metricExcluded">0</div></div>
-            </div>
-
-            <div class="section" style="flex:1;min-height:0;display:flex;flex-direction:column;">
-              <div class="section-title">Session Terminal</div>
-              <div class="terminal" id="terminal"></div>
-            </div>
-          </div>
+    <main class="app-main">
+      <header class="app-toolbar">
+        <div class="toolbar-left">
+          <span class="eyebrow" id="toolbarMode">Discover</span>
+          <span class="sep"></span>
+          <span class="mono" id="toolbarContext">Idle</span>
+          <span class="sep"></span>
+          <span class="mono" id="toolbarSecondary">Session ready</span>
         </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <span>Discovered Feeds</span>
-            <span id="feedListCount">0 shown</span>
-          </div>
-          <div class="panel-body">
-            <div class="feed-list" id="feedList"></div>
-          </div>
+        <div class="toolbar-right" id="discoverActions">
+          <button class="btn micro" id="keepSelectedBtn">Keep selected</button>
+          <button class="btn micro" id="excludeSelectedBtn">Exclude selected</button>
+          <button class="btn micro" id="openReaderBtn">Open in Reader</button>
         </div>
-
-        <div class="panel">
-          <div class="panel-head">Discover Inspector</div>
-          <div class="panel-body" id="discoverInspector">
-            <div class="hint">Select a feed candidate to inspect details.</div>
-          </div>
+        <div class="toolbar-right hidden" id="readerActions">
+          <button class="btn micro" id="backDiscoverBtn">Back to Discover</button>
         </div>
+      </header>
+
+      <section class="workspace discover-layout active" id="discoverPane">
+        <section class="pane no-toolbar">
+          <div class="pane-head"><div class="pane-title">Activity</div><div class="pane-meta mono" id="logCount">0 actions</div></div>
+          <div class="pane-body terminal" id="terminal"></div>
+        </section>
+
+        <section class="pane">
+          <div class="pane-head"><div class="pane-title">Discovered feeds</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
+          <div class="pane-toolbar">
+            <div class="tiny" id="discoverSummary">0 total · 0 kept · 0 excluded</div>
+          </div>
+          <div class="pane-body feed-list" id="feedList"></div>
+        </section>
+
+        <aside class="pane no-toolbar discover-inspector-pane">
+          <div class="pane-head"><div class="pane-title">Discover inspector</div></div>
+          <div class="pane-body inspector" id="discoverInspector"></div>
+        </aside>
       </section>
 
-      <section class="mode-pane reader-layout" id="readerPane">
-        <div class="panel">
-          <div class="panel-head">Feed Pack</div>
-          <div class="panel-body stack">
-            <input id="readerSourceSearch" placeholder="Search sources" />
-            <div class="pack-list" id="packList"></div>
-          </div>
-        </div>
+      <section class="workspace reader-layout" id="readerPane">
+        <section class="pane">
+          <div class="pane-head"><div class="pane-title">Feed pack</div><div class="pane-meta mono" id="packCount">0 sources</div></div>
+          <div class="pane-toolbar"><div class="tiny" id="packSummary">Filtered sources</div></div>
+          <div class="pane-body pack-list" id="packList"></div>
+        </section>
 
-        <div class="panel">
-          <div class="panel-head">
-            <span>Headline River</span>
-            <span id="headlineCount">0 shown</span>
-          </div>
-          <div class="panel-body stack">
-            <div class="controls-row">
-              <input id="headlineSearch" placeholder="Search headlines / excerpt" />
-              <select id="rangeSelect">
-                <option value="6">Last 6h</option>
-                <option value="24" selected>Last 24h</option>
-                <option value="72">Last 72h</option>
-                <option value="168">Last 7d</option>
-              </select>
-            </div>
-            <div class="headline-list" id="headlineList"></div>
-          </div>
-        </div>
+        <section class="pane">
+          <div class="pane-head"><div class="pane-title">Headline river</div><div class="pane-meta mono" id="headlineCount">0 shown</div></div>
+          <div class="pane-toolbar"><div class="tiny" id="headlineSummary">Chronology-first normalized stream</div></div>
+          <div class="pane-body headline-list" id="headlineList"></div>
+        </section>
 
-        <div class="panel">
-          <div class="panel-head">Story Inspector</div>
-          <div class="panel-body" id="storyInspector">
-            <div class="hint">Select a headline row to inspect story details.</div>
-          </div>
-        </div>
+        <aside class="pane no-toolbar story-pane">
+          <div class="pane-head"><div class="pane-title">Story inspector</div></div>
+          <div class="pane-body inspector" id="storyInspector"></div>
+        </aside>
       </section>
+
+      <footer class="app-status">
+        <div class="status-group mono" id="statusLeft">DISCOVER · Idle</div>
+        <div class="status-group mono" id="statusRight">Session ready</div>
+      </footer>
     </main>
-
-    <footer class="status-strip">
-      <div id="statusLeft">DISCOVER · Idle</div>
-      <div id="statusRight">Session ready</div>
-    </footer>
   </div>
 
   <script>
     const state = {
       mode: 'discover',
-      session: {
-        running: false,
-        stopped: false,
-        feeds: [],
-        selectedFeedId: null,
-        timers: []
-      },
-      reader: {
-        selectedSourceId: 'all',
-        selectedHeadlineId: null,
-        sourceSearch: '',
-        headlineSearch: '',
-        rangeHours: 24
-      },
+      session: { running: false, stopped: false, feeds: [], selectedFeedId: null, selectedFeedIds: new Set(), timers: [], seeds: 0 },
+      reader: { selectedSourceId: 'all', selectedHeadlineId: null, sourceSearch: '', headlineSearch: '', rangeHours: 24 },
       logs: []
     };
 
     const els = {
-      modeButtons: document.querySelectorAll('.mode-btn'),
-      toolbarTitle: document.getElementById('toolbarTitle'),
-      toolbarContext: document.getElementById('toolbarContext'),
-      statusLeft: document.getElementById('statusLeft'),
-      statusRight: document.getElementById('statusRight'),
+      navButtons: document.querySelectorAll('.nav-btn'),
+      modePanels: document.querySelectorAll('.mode-panel'),
       discoverPane: document.getElementById('discoverPane'),
       readerPane: document.getElementById('readerPane'),
+      toolbarMode: document.getElementById('toolbarMode'),
+      toolbarContext: document.getElementById('toolbarContext'),
+      toolbarSecondary: document.getElementById('toolbarSecondary'),
+      statusLeft: document.getElementById('statusLeft'),
+      statusRight: document.getElementById('statusRight'),
+      discoverActions: document.getElementById('discoverActions'),
+      readerActions: document.getElementById('readerActions'),
       seedInput: document.getElementById('seedInput'),
       discoverFilter: document.getElementById('discoverFilter'),
       discoverSearch: document.getElementById('discoverSearch'),
       startBtn: document.getElementById('startBtn'),
       stopBtn: document.getElementById('stopBtn'),
       clearBtn: document.getElementById('clearBtn'),
+      keepSelectedBtn: document.getElementById('keepSelectedBtn'),
+      excludeSelectedBtn: document.getElementById('excludeSelectedBtn'),
+      openReaderBtn: document.getElementById('openReaderBtn'),
+      backDiscoverBtn: document.getElementById('backDiscoverBtn'),
       metricDiscovered: document.getElementById('metricDiscovered'),
       metricKept: document.getElementById('metricKept'),
       metricExcluded: document.getElementById('metricExcluded'),
+      logCount: document.getElementById('logCount'),
       terminal: document.getElementById('terminal'),
       feedList: document.getElementById('feedList'),
       feedListCount: document.getElementById('feedListCount'),
+      discoverSummary: document.getElementById('discoverSummary'),
       discoverInspector: document.getElementById('discoverInspector'),
       packList: document.getElementById('packList'),
+      packCount: document.getElementById('packCount'),
+      packSummary: document.getElementById('packSummary'),
       readerSourceSearch: document.getElementById('readerSourceSearch'),
       headlineSearch: document.getElementById('headlineSearch'),
       rangeSelect: document.getElementById('rangeSelect'),
       headlineList: document.getElementById('headlineList'),
       headlineCount: document.getElementById('headlineCount'),
+      headlineSummary: document.getElementById('headlineSummary'),
       storyInspector: document.getElementById('storyInspector')
     };
 
     const sourceCatalog = [
-      { id: 'all', label: 'All sources', domain: 'any', stories: 0 },
-      { id: 'sec', label: 'SecOps Weekly', domain: 'secopsweekly.net', stories: 4 },
-      { id: 'infra', label: 'Infra Notebook', domain: 'infranotebook.dev', stories: 3 },
-      { id: 'product', label: 'Product Rail', domain: 'productrail.io', stories: 3 }
+      { id: 'all', label: 'All sources', domain: 'any' },
+      { id: 'sec', label: 'SecOps Weekly', domain: 'secopsweekly.net' },
+      { id: 'infra', label: 'Infra Notebook', domain: 'infranotebook.dev' },
+      { id: 'product', label: 'Product Rail', domain: 'productrail.io' }
     ];
 
     const now = Date.now();
@@ -618,19 +523,20 @@
     ];
 
     function mkStory(id, sourceId, title, hoursAgo, excerpt) {
+      const source = sourceCatalog.find(s => s.id === sourceId);
       return {
         id,
         sourceId,
         title,
         excerpt,
         publishedAt: now - hoursAgo * 3600 * 1000,
-        url: `https://${sourceCatalog.find(s => s.id === sourceId).domain}/articles/${id}`,
+        url: `https://${source.domain}/articles/${id}`,
         author: ['Ops Desk', 'Staff', 'Research'][hoursAgo % 3]
       };
     }
 
     function parseSeeds(raw) {
-      return Array.from(new Set(raw.split(/[\s,\n]+/g).map(v => v.trim()).filter(Boolean)));
+      return [...new Set(raw.split(/[\s,\n]+/g).map(v => v.trim()).filter(Boolean))];
     }
 
     function getDomain(input) {
@@ -650,14 +556,15 @@
 
     function renderTerminal() {
       els.terminal.innerHTML = '';
+      els.logCount.textContent = `${state.logs.length} actions`;
       if (!state.logs.length) {
         els.terminal.innerHTML = '<div class="hint">Session idle. Awaiting crawl start.</div>';
         return;
       }
-      state.logs.slice(-220).forEach(row => {
+      state.logs.slice(-300).forEach(row => {
         const line = document.createElement('div');
         line.className = 'log-row';
-        line.innerHTML = `<div class="log-ts">${row.ts}</div><div class="log-code ${row.cls}">${row.code}</div><div>${row.message}</div>`;
+        line.innerHTML = `<div>${row.ts}</div><div class="log-code ${row.cls}">${row.code}</div><div>${row.message}</div>`;
         els.terminal.appendChild(line);
       });
       els.terminal.scrollTop = els.terminal.scrollHeight;
@@ -668,9 +575,17 @@
       state.session.timers = [];
     }
 
+    function setDiscoverStatus(context, right) {
+      els.toolbarContext.textContent = context;
+      els.toolbarSecondary.textContent = right;
+      if (state.mode === 'discover') els.statusLeft.textContent = `DISCOVER · ${context}`;
+      els.statusRight.textContent = right;
+    }
+
     function resetSessionData() {
       state.session.feeds = [];
       state.session.selectedFeedId = null;
+      state.session.selectedFeedIds.clear();
       renderFeedList();
       renderDiscoverInspector();
       updateDiscoverMetrics();
@@ -696,14 +611,6 @@
       setDiscoverStatus('Idle', 'Session ready');
     }
 
-    function setDiscoverStatus(context, right) {
-      els.toolbarContext.textContent = context;
-      if (state.mode === 'discover') {
-        els.statusLeft.textContent = `DISCOVER · ${context}`;
-      }
-      els.statusRight.textContent = right;
-    }
-
     function synthesizeFeeds(seeds) {
       const buckets = ['news', 'blog', 'updates', 'feed', 'rss'];
       const out = [];
@@ -715,14 +622,13 @@
         for (let i = 0; i < count; i++) {
           const type = buckets[(sIdx + i) % buckets.length];
           const conf = Math.max(55, 90 - (i * 7) - (sIdx * 2));
-          const stateTag = conf >= 78 ? 'candidate' : (conf >= 64 ? 'kept' : 'excluded');
-          const url = `https://${domain}/${type}${i ? `/${i}` : ''}.xml`;
+          const stateTag = conf >= 78 ? 'candidate' : conf >= 64 ? 'kept' : 'excluded';
           out.push({
             id: `f${idSeq++}`,
             sourceSeed: seed,
             sourceDomain: domain,
             title: `${base.replace(/[-_]/g, ' ')} ${type}`.replace(/\b\w/g, c => c.toUpperCase()),
-            url,
+            url: `https://${domain}/${type}${i ? `/${i}` : ''}.xml`,
             format: i % 2 === 0 ? 'rss' : 'atom',
             confidence: conf,
             discoveredAt: Date.now() - (idSeq * 15000),
@@ -735,11 +641,20 @@
       return out;
     }
 
+    function schedule(delay, fn) {
+      const timer = setTimeout(() => {
+        if (state.session.stopped && !state.session.running) return;
+        fn();
+      }, delay);
+      state.session.timers.push(timer);
+    }
+
     function runPrototypeSession(seeds) {
       clearSession();
       state.session.running = true;
       state.session.stopped = false;
-      setDiscoverStatus('Running', `Seeds: ${seeds.length}`);
+      state.session.seeds = seeds.length;
+      setDiscoverStatus('Running', `Seeds ${seeds.length}`);
       log('RUN', `Discovery session started for ${seeds.length} seed(s)`, 'ok');
 
       const synthesized = synthesizeFeeds(seeds);
@@ -748,9 +663,10 @@
 
       seeds.forEach((seed, index) => {
         const domain = getDomain(seed);
-        schedule(offset, () => log('FETCH', `GET ${domain}`, '')); offset += 110;
-        schedule(offset, () => log('PARSE', `Extract links and feed hints from ${domain}`, '')); offset += 120;
+        schedule(offset, () => log('FETCH', `GET ${domain}`)); offset += 120;
+        schedule(offset, () => log('PARSE', `Extract feed hints from ${domain}`)); offset += 120;
         const forSeed = synthesized.filter(f => f.sourceDomain === domain);
+
         forSeed.forEach(feed => {
           schedule(offset, () => {
             if (!state.session.running) return;
@@ -760,17 +676,17 @@
             renderFeedList();
             renderDiscoverInspector();
             updateDiscoverMetrics();
-            const code = feed.state === 'excluded' ? 'REJECT' : 'VALID';
-            const cls = feed.state === 'excluded' ? 'warn' : 'ok';
-            log(code, `${feed.title} · ${feed.format.toUpperCase()} · ${feed.confidence}%`, cls);
+            log(feed.state === 'excluded' ? 'REJECT' : 'VALID', `${feed.title} · ${feed.format.toUpperCase()} · ${feed.confidence}%`, feed.state === 'excluded' ? 'warn' : 'ok');
             setDiscoverStatus('Running', `Processed ${state.session.feeds.length} candidates`);
           });
-          offset += 140;
+          offset += 135;
         });
-        schedule(offset, () => log('DONE', `Seed ${index + 1}/${seeds.length} completed (${domain})`, 'ok')); offset += 120;
+
+        schedule(offset, () => log('DONE', `Seed ${index + 1}/${seeds.length} completed (${domain})`, 'ok'));
+        offset += 120;
       });
 
-      schedule(offset + 40, () => {
+      schedule(offset + 50, () => {
         if (!state.session.running) return;
         state.session.running = false;
         log('DONE', `Session completed. ${state.session.feeds.length} candidates indexed.`, 'ok');
@@ -778,22 +694,13 @@
       });
     }
 
-    function schedule(delay, fn) {
-      const timer = setTimeout(() => {
-        if (state.session.stopped && state.session.running === false) return;
-        fn();
-      }, delay);
-      state.session.timers.push(timer);
-    }
-
     function getFilteredFeeds() {
       const filter = els.discoverFilter.value;
       const q = els.discoverSearch.value.trim().toLowerCase();
       return state.session.feeds.filter(feed => {
-        const stateOk = filter === 'all' ? true : feed.state === filter;
+        const stateOk = filter === 'all' || feed.state === filter;
         const hay = `${feed.title} ${feed.sourceDomain} ${feed.url}`.toLowerCase();
-        const searchOk = !q || hay.includes(q);
-        return stateOk && searchOk;
+        return stateOk && (!q || hay.includes(q));
       });
     }
 
@@ -803,7 +710,7 @@
       els.feedListCount.textContent = `${filtered.length} shown`;
 
       if (!filtered.length) {
-        els.feedList.innerHTML = '<div class="hint">No feed records for the current filter.</div>';
+        els.feedList.innerHTML = '<div class="hint">No feed records for current filter.</div>';
         return;
       }
 
@@ -811,31 +718,70 @@
         const row = document.createElement('div');
         row.className = `feed-row ${feed.state === 'excluded' ? 'excluded' : ''} ${feed.state === 'kept' ? 'kept' : ''} ${feed.id === state.session.selectedFeedId ? 'selected' : ''}`;
         row.innerHTML = `
-          <div class="row-top">
-            <div class="row-title">${feed.title}</div>
-            <div class="badges">
-              <span class="badge">${feed.format.toUpperCase()}</span>
+          <input type="checkbox" data-id="${feed.id}" ${state.session.selectedFeedIds.has(feed.id) ? 'checked' : ''} />
+          <span class="dot"></span>
+          <div class="feed-main">
+            <div class="topline">
+              <span class="domain">${feed.sourceDomain}</span>
+              <span class="badge type">${feed.format}</span>
               <span class="badge">${feed.confidence}%</span>
               <span class="badge state-${feed.state}">${feed.state}</span>
             </div>
+            <div class="title">${feed.title}</div>
+            <div class="sub url">${feed.url}</div>
           </div>
-          <div class="row-sub">${feed.sourceDomain}</div>
-          <div class="row-sub">${feed.url}</div>
-          <div class="hover-preview">
+          <button class="row-action" data-act="toggle">${feed.state === 'excluded' ? '↺' : '×'}</button>
+          <div class="preview">
             <div class="p-title">${feed.title}</div>
             <div class="p-line">Source: ${feed.sourceSeed}</div>
+            <div class="p-line">Type: ${feed.format.toUpperCase()} · Confidence ${feed.confidence}%</div>
             <div class="p-line">Latest: ${feed.latestTitle}</div>
             <div class="p-line">Observed: ${feed.latestAt}</div>
-            <div class="p-line">State: ${feed.state} · Confidence ${feed.confidence}%</div>
           </div>
         `;
-        row.addEventListener('click', () => {
+
+        row.addEventListener('click', e => {
+          if (e.target.matches('input,button')) return;
           state.session.selectedFeedId = feed.id;
           renderFeedList();
           renderDiscoverInspector();
         });
+
+        row.querySelector('input').addEventListener('change', e => {
+          if (e.target.checked) state.session.selectedFeedIds.add(feed.id);
+          else state.session.selectedFeedIds.delete(feed.id);
+        });
+
+        row.querySelector('[data-act="toggle"]').addEventListener('click', e => {
+          e.stopPropagation();
+          setFeedState(feed.id, feed.state === 'excluded' ? 'candidate' : 'excluded');
+        });
+
         els.feedList.appendChild(row);
       });
+    }
+
+    function setFeedState(id, nextState) {
+      const feed = state.session.feeds.find(f => f.id === id);
+      if (!feed) return;
+      feed.state = nextState;
+      log(nextState === 'excluded' ? 'REJECT' : 'VALID', `${feed.title} set to ${nextState}`, nextState === 'excluded' ? 'warn' : 'ok');
+      renderFeedList();
+      renderDiscoverInspector();
+      updateDiscoverMetrics();
+    }
+
+    function updateDiscoverMetrics() {
+      const total = state.session.feeds.length;
+      const kept = state.session.feeds.filter(f => f.state === 'kept').length;
+      const excluded = state.session.feeds.filter(f => f.state === 'excluded').length;
+      els.metricDiscovered.textContent = total;
+      els.metricKept.textContent = kept;
+      els.metricExcluded.textContent = excluded;
+      els.discoverSummary.textContent = `${total} total · ${kept} kept · ${excluded} excluded`;
+      if (state.mode === 'discover') {
+        els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Feeds ${total}`;
+      }
     }
 
     function renderDiscoverInspector() {
@@ -845,72 +791,54 @@
         return;
       }
       els.discoverInspector.innerHTML = `
-        <div class="section">
-          <div class="section-title">Source</div>
-          <div class="section-line"><strong>Seed:</strong> ${feed.sourceSeed}</div>
-          <div class="section-line"><strong>Domain:</strong> ${feed.sourceDomain}</div>
-        </div>
-        <div class="section">
-          <div class="section-title">Feed</div>
-          <div class="section-line"><strong>Title:</strong> ${feed.title}</div>
-          <div class="section-line"><strong>URL:</strong> ${feed.url}</div>
-          <div class="section-line"><strong>Format:</strong> ${feed.format.toUpperCase()}</div>
-        </div>
-        <div class="section">
-          <div class="section-title">Latest Post</div>
-          <div class="section-line"><strong>Headline:</strong> ${feed.latestTitle}</div>
-          <div class="section-line"><strong>Published:</strong> ${feed.latestAt}</div>
-        </div>
-        <div class="section">
-          <div class="section-title">State</div>
-          <div class="section-line"><strong>Status:</strong> ${feed.state}</div>
-          <div class="section-line"><strong>Confidence:</strong> ${feed.confidence}%</div>
-        </div>
-        <div class="section">
-          <div class="section-title">Actions</div>
-          <div class="inline-actions">
-            <button id="keepFeedBtn">Keep</button>
-            <button id="excludeFeedBtn" class="danger">Exclude</button>
-          </div>
+        <div class="block"><div class="k">Source</div><div class="v">${feed.sourceDomain}</div><div class="s mono">${feed.sourceSeed}</div></div>
+        <div class="block"><div class="k">Feed</div><div class="v">${feed.title}</div><div class="s mono">${feed.url}</div><div class="s">Format ${feed.format.toUpperCase()} · Confidence ${feed.confidence}%</div></div>
+        <div class="block"><div class="k">Latest post</div><div class="v">${feed.latestTitle}</div><div class="s">Observed ${feed.latestAt}</div></div>
+        <div class="block"><div class="k">State</div><div class="s">Current: ${feed.state}</div></div>
+        <div class="row2">
+          <button class="btn micro" id="insKeep">Keep</button>
+          <button class="btn micro danger" id="insExclude">Exclude</button>
         </div>
       `;
-      document.getElementById('keepFeedBtn').addEventListener('click', () => setFeedState(feed.id, 'kept'));
-      document.getElementById('excludeFeedBtn').addEventListener('click', () => setFeedState(feed.id, 'excluded'));
-    }
-
-    function setFeedState(id, nextState) {
-      const feed = state.session.feeds.find(f => f.id === id);
-      if (!feed) return;
-      feed.state = nextState;
-      log(nextState === 'kept' ? 'VALID' : 'REJECT', `${feed.title} set to ${nextState}`, nextState === 'kept' ? 'ok' : 'warn');
-      renderFeedList();
-      renderDiscoverInspector();
-      updateDiscoverMetrics();
-    }
-
-    function updateDiscoverMetrics() {
-      els.metricDiscovered.textContent = `${state.session.feeds.length}`;
-      els.metricKept.textContent = `${state.session.feeds.filter(f => f.state === 'kept').length}`;
-      els.metricExcluded.textContent = `${state.session.feeds.filter(f => f.state === 'excluded').length}`;
+      document.getElementById('insKeep').addEventListener('click', () => setFeedState(feed.id, 'kept'));
+      document.getElementById('insExclude').addEventListener('click', () => setFeedState(feed.id, 'excluded'));
     }
 
     function getFilteredSources() {
       const q = state.reader.sourceSearch.toLowerCase();
-      return sourceCatalog.filter(src => {
-        if (src.id === 'all') return true;
-        return !q || `${src.label} ${src.domain}`.toLowerCase().includes(q);
-      }).map(src => ({ ...src, stories: src.id === 'all' ? readerStories.length : readerStories.filter(s => s.sourceId === src.id).length }));
+      return sourceCatalog
+        .filter(src => src.id === 'all' || !q || `${src.label} ${src.domain}`.toLowerCase().includes(q))
+        .map(src => ({ ...src, stories: src.id === 'all' ? readerStories.length : readerStories.filter(s => s.sourceId === src.id).length }));
+    }
+
+    function getFilteredHeadlines() {
+      const query = state.reader.headlineSearch.toLowerCase();
+      const rangeCutoff = Date.now() - state.reader.rangeHours * 3600 * 1000;
+      return readerStories
+        .filter(st => state.reader.selectedSourceId === 'all' || st.sourceId === state.reader.selectedSourceId)
+        .filter(st => st.publishedAt >= rangeCutoff)
+        .filter(st => !query || `${st.title} ${st.excerpt}`.toLowerCase().includes(query))
+        .sort((a, b) => b.publishedAt - a.publishedAt);
+    }
+
+    function fmtAge(ts) {
+      const h = Math.max(1, Math.round((Date.now() - ts) / 3600000));
+      return `${h}h ago`;
     }
 
     function renderPackList() {
       const sources = getFilteredSources();
       els.packList.innerHTML = '';
+      els.packCount.textContent = `${sources.length} sources`;
+      els.packSummary.textContent = `Visible ${sources.length} source rows`;
+
       sources.forEach(src => {
         const row = document.createElement('div');
         row.className = `pack-row ${state.reader.selectedSourceId === src.id ? 'selected' : ''}`;
         row.innerHTML = `
-          <div class="row-top"><div class="row-title">${src.label}</div><div class="badge">${src.stories}</div></div>
-          <div class="row-sub">${src.domain}</div>
+          <span class="dot"></span>
+          <div class="pack-main"><div class="pack-title">${src.label}</div><div class="sub mono">${src.domain}</div></div>
+          <span class="badge">${src.stories}</span>
         `;
         row.addEventListener('click', () => {
           state.reader.selectedSourceId = src.id;
@@ -923,25 +851,11 @@
       });
     }
 
-    function getFilteredHeadlines() {
-      const query = state.reader.headlineSearch.toLowerCase();
-      const rangeCutoff = Date.now() - state.reader.rangeHours * 3600 * 1000;
-      return readerStories
-        .filter(st => state.reader.selectedSourceId === 'all' ? true : st.sourceId === state.reader.selectedSourceId)
-        .filter(st => st.publishedAt >= rangeCutoff)
-        .filter(st => !query || `${st.title} ${st.excerpt}`.toLowerCase().includes(query))
-        .sort((a, b) => b.publishedAt - a.publishedAt);
-    }
-
-    function fmtAge(ts) {
-      const h = Math.max(1, Math.round((Date.now() - ts) / 3600000));
-      return `${h}h ago`;
-    }
-
     function renderHeadlineList() {
       const rows = getFilteredHeadlines();
       els.headlineList.innerHTML = '';
       els.headlineCount.textContent = `${rows.length} shown`;
+      els.headlineSummary.textContent = `Range ${state.reader.rangeHours}h · Source ${state.reader.selectedSourceId}`;
       if (!rows.length) {
         els.headlineList.innerHTML = '<div class="hint">No stories match source/search/range filters.</div>';
         return;
@@ -951,18 +865,18 @@
         const row = document.createElement('div');
         row.className = `headline-row ${state.reader.selectedHeadlineId === st.id ? 'selected' : ''}`;
         row.innerHTML = `
-          <div class="row-top">
-            <div class="row-title">${st.title}</div>
-            <div class="badge">${fmtAge(st.publishedAt)}</div>
+          <div class="headline-main">
+            <div class="topline"><span class="headline-source">${source.label}</span><span class="mono">${new Date(st.publishedAt).toLocaleString()}</span></div>
+            <div class="title">${st.title}</div>
+            <div class="sub">${st.excerpt}</div>
           </div>
-          <div class="row-sub">${source.label} · ${source.domain}</div>
-          <div class="row-sub">${st.excerpt}</div>
-          <div class="hover-preview">
+          <span class="badge">${fmtAge(st.publishedAt)}</span>
+          <div class="preview">
             <div class="p-title">${st.title}</div>
-            <div class="p-line">Source: ${source.label}</div>
+            <div class="p-line">Source: ${source.label} · ${source.domain}</div>
             <div class="p-line">Published: ${new Date(st.publishedAt).toLocaleString()}</div>
-            <div class="p-line">Author: ${st.author}</div>
             <div class="p-line">${st.excerpt}</div>
+            <div class="p-line mono">${st.url}</div>
           </div>
         `;
         row.addEventListener('click', () => {
@@ -982,42 +896,46 @@
       }
       const source = sourceCatalog.find(s => s.id === st.sourceId);
       els.storyInspector.innerHTML = `
-        <div class="section">
-          <div class="section-title">Story</div>
-          <div class="section-line"><strong>Title:</strong> ${st.title}</div>
-          <div class="section-line"><strong>Published:</strong> ${new Date(st.publishedAt).toLocaleString()}</div>
-          <div class="section-line"><strong>Author:</strong> ${st.author}</div>
-        </div>
-        <div class="section">
-          <div class="section-title">Source</div>
-          <div class="section-line"><strong>Name:</strong> ${source.label}</div>
-          <div class="section-line"><strong>Domain:</strong> ${source.domain}</div>
-          <div class="section-line"><strong>URL:</strong> ${st.url}</div>
-        </div>
-        <div class="section">
-          <div class="section-title">Excerpt</div>
-          <div class="section-line">${st.excerpt}</div>
-        </div>
+        <div class="block"><div class="k">Story</div><div class="v">${st.title}</div><div class="s mono">${st.url}</div></div>
+        <div class="block"><div class="k">Source</div><div class="s">${source.label} · ${source.domain}</div><div class="s">Published ${new Date(st.publishedAt).toLocaleString()}</div><div class="s">Author ${st.author}</div></div>
+        <div class="block"><div class="k">Excerpt</div><div class="s">${st.excerpt}</div></div>
       `;
+    }
+
+    function batchSetSelected(nextState) {
+      if (!state.session.selectedFeedIds.size) return;
+      state.session.selectedFeedIds.forEach(id => {
+        const feed = state.session.feeds.find(f => f.id === id);
+        if (feed) feed.state = nextState;
+      });
+      log(nextState === 'excluded' ? 'REJECT' : 'VALID', `${state.session.selectedFeedIds.size} selected feeds set to ${nextState}`, nextState === 'excluded' ? 'warn' : 'ok');
+      renderFeedList();
+      renderDiscoverInspector();
+      updateDiscoverMetrics();
     }
 
     function setMode(mode) {
       state.mode = mode;
-      els.modeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
-      els.discoverPane.classList.toggle('active', mode === 'discover');
-      els.readerPane.classList.toggle('active', mode === 'reader');
-      if (mode === 'discover') {
-        els.toolbarTitle.textContent = 'Discover Session';
+      const isDiscover = mode === 'discover';
+      els.navButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+      els.modePanels.forEach(panel => panel.classList.toggle('active', panel.dataset.panel === mode));
+      els.discoverPane.classList.toggle('active', isDiscover);
+      els.readerPane.classList.toggle('active', !isDiscover);
+      els.discoverActions.classList.toggle('hidden', !isDiscover);
+      els.readerActions.classList.toggle('hidden', isDiscover);
+      els.toolbarMode.textContent = isDiscover ? 'Discover' : 'Reader';
+      if (isDiscover) {
         els.statusLeft.textContent = `DISCOVER · ${els.toolbarContext.textContent}`;
       } else {
-        els.toolbarTitle.textContent = 'Reader Workspace';
         els.toolbarContext.textContent = 'Loaded';
+        els.toolbarSecondary.textContent = `${getFilteredHeadlines().length} visible stories`;
         els.statusLeft.textContent = 'READER · Active';
+        els.statusRight.textContent = `Range ${state.reader.rangeHours}h`; 
       }
     }
 
     function bindEvents() {
-      els.modeButtons.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
+      els.navButtons.forEach(btn => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
 
       els.startBtn.addEventListener('click', () => {
         const seeds = parseSeeds(els.seedInput.value);
@@ -1031,13 +949,15 @@
 
       els.stopBtn.addEventListener('click', () => stopSession('Stopped by operator'));
       els.clearBtn.addEventListener('click', clearSession);
+      els.keepSelectedBtn.addEventListener('click', () => batchSetSelected('kept'));
+      els.excludeSelectedBtn.addEventListener('click', () => batchSetSelected('excluded'));
+      els.openReaderBtn.addEventListener('click', () => setMode('reader'));
+      els.backDiscoverBtn.addEventListener('click', () => setMode('discover'));
 
-      [els.discoverFilter, els.discoverSearch].forEach(el => {
-        el.addEventListener('input', () => {
-          renderFeedList();
-          renderDiscoverInspector();
-        });
-      });
+      [els.discoverFilter, els.discoverSearch].forEach(el => el.addEventListener('input', () => {
+        renderFeedList();
+        renderDiscoverInspector();
+      }));
 
       els.readerSourceSearch.addEventListener('input', () => {
         state.reader.sourceSearch = els.readerSourceSearch.value.trim();
