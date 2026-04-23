@@ -413,7 +413,7 @@
         <section class="pane">
           <div class="pane-head"><div class="pane-title">Discovered feeds</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
           <div class="pane-toolbar">
-            <div class="tiny" id="discoverSummary">0 total · 0 kept · 0 excluded</div>
+            <div class="tiny" id="discoverSummary">0 total · 0 candidate · 0 kept · 0 excluded</div>
           </div>
           <div class="pane-body feed-list" id="feedList"></div>
         </section>
@@ -453,7 +453,7 @@
   <script>
     const state = {
       mode: 'discover',
-      session: { running: false, stopped: false, feeds: [], selectedFeedId: null, selectedFeedIds: new Set(), timers: [], seeds: 0 },
+      session: { running: false, stopped: false, feeds: [], selectedFeedId: null, selectedFeedIds: new Set(), timers: [], seeds: 0, readerClock: Date.now() },
       reader: { selectedSourceId: 'all', selectedHeadlineId: null, sourceSearch: '', headlineSearch: '', rangeHours: 24 },
       logs: []
     };
@@ -501,38 +501,24 @@
       storyInspector: document.getElementById('storyInspector')
     };
 
-    const sourceCatalog = [
-      { id: 'all', label: 'All sources', domain: 'any' },
-      { id: 'sec', label: 'SecOps Weekly', domain: 'secopsweekly.net' },
-      { id: 'infra', label: 'Infra Notebook', domain: 'infranotebook.dev' },
-      { id: 'product', label: 'Product Rail', domain: 'productrail.io' }
+    const STORY_TITLE_PATTERNS = [
+      'Signal check: {{topic}}',
+      '{{topic}} operating notes',
+      'Watchlist update for {{topic}}',
+      'Field report: {{topic}}',
+      '{{topic}} triage brief'
+    ];
+    const STORY_EXCERPT_PATTERNS = [
+      'Derived from {{source}} feed activity with emphasis on practical handoff details.',
+      'Session-normalized summary for {{domain}} with confidence-linked timing markers.',
+      'Compact briefing generated from current feed metadata and latest observed post.',
+      'Operational notes for {{topic}} scoped to the active kept-feed pack.'
     ];
 
-    const now = Date.now();
-    const readerStories = [
-      mkStory('h1', 'sec', 'Supply chain incident playbook refresh', 2, 'Updated tactical incident response checklist for package integrity and rollback windows.'),
-      mkStory('h2', 'sec', 'When to rotate keys across CI clusters', 4, 'A concise matrix for key-age thresholds and breach-adjacent trigger events.'),
-      mkStory('h3', 'infra', 'Latency budget drift in event pipelines', 8, 'What to instrument when queue pressure starts breaking ingest SLOs.'),
-      mkStory('h4', 'product', 'Decision logs that survive re-orgs', 10, 'A practical method for preserving rationale under changing ownership.'),
-      mkStory('h5', 'infra', 'Sane defaults for self-hosted observability', 14, 'Tuning retention, cardinality limits, and dashboard ownership boundaries.'),
-      mkStory('h6', 'sec', 'Credential expiry as a UX problem', 16, 'How expiry reminders and fallback recovery impact real key hygiene.'),
-      mkStory('h7', 'product', 'Roadmap debt and post-launch entropy', 20, 'How to score roadmap leftovers before they become compounding drag.'),
-      mkStory('h8', 'product', 'Feature review notes as structured data', 27, 'Templates that transform review transcripts into reusable retrieval units.'),
-      mkStory('h9', 'infra', 'Failover drills without weekly exhaustion', 38, 'Cadence design for disaster exercises that still respects team focus.'),
-      mkStory('h10', 'sec', 'Threat modeling lightweight endpoint tools', 65, 'Prioritizing misuse paths when toolchains run on distributed laptops.')
-    ];
-
-    function mkStory(id, sourceId, title, hoursAgo, excerpt) {
-      const source = sourceCatalog.find(s => s.id === sourceId);
-      return {
-        id,
-        sourceId,
-        title,
-        excerpt,
-        publishedAt: now - hoursAgo * 3600 * 1000,
-        url: `https://${source.domain}/articles/${id}`,
-        author: ['Ops Desk', 'Staff', 'Research'][hoursAgo % 3]
-      };
+    function hashString(input) {
+      let h = 0;
+      for (let i = 0; i < input.length; i++) h = ((h << 5) - h + input.charCodeAt(i)) | 0;
+      return Math.abs(h);
     }
 
     function parseSeeds(raw) {
@@ -586,9 +572,14 @@
       state.session.feeds = [];
       state.session.selectedFeedId = null;
       state.session.selectedFeedIds.clear();
+      state.reader.selectedSourceId = 'all';
+      state.reader.selectedHeadlineId = null;
       renderFeedList();
       renderDiscoverInspector();
       updateDiscoverMetrics();
+      renderPackList();
+      renderHeadlineList();
+      renderStoryInspector();
     }
 
     function stopSession(reason = 'Manual stop') {
@@ -606,6 +597,7 @@
       clearTimers();
       state.session.running = false;
       state.session.stopped = false;
+      state.session.readerClock = Date.now();
       resetSessionData();
       renderTerminal();
       setDiscoverStatus('Idle', 'Session ready');
@@ -654,6 +646,7 @@
       state.session.running = true;
       state.session.stopped = false;
       state.session.seeds = seeds.length;
+      state.session.readerClock = Date.now();
       setDiscoverStatus('Running', `Seeds ${seeds.length}`);
       log('RUN', `Discovery session started for ${seeds.length} seed(s)`, 'ok');
 
@@ -769,16 +762,22 @@
       renderFeedList();
       renderDiscoverInspector();
       updateDiscoverMetrics();
+      syncReaderSelection();
+      renderPackList();
+      renderHeadlineList();
+      renderStoryInspector();
+      refreshReaderStatus();
     }
 
     function updateDiscoverMetrics() {
       const total = state.session.feeds.length;
       const kept = state.session.feeds.filter(f => f.state === 'kept').length;
       const excluded = state.session.feeds.filter(f => f.state === 'excluded').length;
+      const candidate = total - kept - excluded;
       els.metricDiscovered.textContent = total;
       els.metricKept.textContent = kept;
       els.metricExcluded.textContent = excluded;
-      els.discoverSummary.textContent = `${total} total · ${kept} kept · ${excluded} excluded`;
+      els.discoverSummary.textContent = `${total} total · ${candidate} candidate · ${kept} kept · ${excluded} excluded`;
       if (state.mode === 'discover') {
         els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Feeds ${total}`;
       }
@@ -804,17 +803,78 @@
       document.getElementById('insExclude').addEventListener('click', () => setFeedState(feed.id, 'excluded'));
     }
 
+    function getReaderEligibleFeeds() {
+      return state.session.feeds.filter(feed => feed.state === 'kept');
+    }
+
+    function buildDerivedReaderModel() {
+      const keptFeeds = getReaderEligibleFeeds();
+      const sourceRows = keptFeeds.map((feed, idx) => {
+        return {
+          id: feed.id,
+          label: feed.title,
+          domain: feed.sourceDomain,
+          sourceSeed: feed.sourceSeed,
+          confidence: feed.confidence,
+          feedUrl: feed.url,
+          rank: idx
+        };
+      });
+
+      const stories = [];
+      sourceRows.forEach((src, sourceIndex) => {
+        const stableSeed = `${src.id}|${src.domain}|${src.label}`;
+        const hash = hashString(stableSeed);
+        const storyCount = 2 + (hash % 4);
+        const domainTopic = src.domain.split('.').slice(0, -1).join(' ') || src.domain;
+
+        for (let i = 0; i < storyCount; i++) {
+          const pattern = STORY_TITLE_PATTERNS[(hash + i) % STORY_TITLE_PATTERNS.length];
+          const excerptPattern = STORY_EXCERPT_PATTERNS[(hash + i) % STORY_EXCERPT_PATTERNS.length];
+          const topic = `${domainTopic} ${['feed health', 'release notes', 'ops status', 'editorial signal', 'coverage drift'][(hash + i * 3) % 5]}`;
+          const title = pattern.replace('{{topic}}', topic.replace(/\b\w/g, c => c.toUpperCase()));
+          const excerpt = excerptPattern
+            .replace('{{source}}', src.label)
+            .replace('{{domain}}', src.domain)
+            .replace('{{topic}}', topic);
+          const hoursAgo = 1 + sourceIndex * 4 + i * 3 + (hash % 3);
+          const publishedAt = state.session.readerClock - hoursAgo * 3600 * 1000;
+          stories.push({
+            id: `st-${src.id}-${i}`,
+            sourceId: src.id,
+            sourceLabel: src.label,
+            sourceDomain: src.domain,
+            title,
+            excerpt,
+            publishedAt,
+            url: `${src.feedUrl.replace(/\.xml$/, '')}/story-${i + 1}`,
+            author: ['Ops Desk', 'Signal Monitor', 'Trace Staff'][(hash + i) % 3]
+          });
+        }
+      });
+
+      stories.sort((a, b) => b.publishedAt - a.publishedAt);
+      const sourceWithCounts = sourceRows.map(src => ({
+        ...src,
+        stories: stories.filter(st => st.sourceId === src.id).length
+      }));
+      const allStories = stories.length;
+      return {
+        sources: [{ id: 'all', label: 'All kept feeds', domain: 'session', stories: allStories }, ...sourceWithCounts],
+        stories
+      };
+    }
+
     function getFilteredSources() {
       const q = state.reader.sourceSearch.toLowerCase();
-      return sourceCatalog
-        .filter(src => src.id === 'all' || !q || `${src.label} ${src.domain}`.toLowerCase().includes(q))
-        .map(src => ({ ...src, stories: src.id === 'all' ? readerStories.length : readerStories.filter(s => s.sourceId === src.id).length }));
+      const model = buildDerivedReaderModel();
+      return model.sources.filter(src => src.id === 'all' || !q || `${src.label} ${src.domain}`.toLowerCase().includes(q));
     }
 
     function getFilteredHeadlines() {
       const query = state.reader.headlineSearch.toLowerCase();
       const rangeCutoff = Date.now() - state.reader.rangeHours * 3600 * 1000;
-      return readerStories
+      return buildDerivedReaderModel().stories
         .filter(st => state.reader.selectedSourceId === 'all' || st.sourceId === state.reader.selectedSourceId)
         .filter(st => st.publishedAt >= rangeCutoff)
         .filter(st => !query || `${st.title} ${st.excerpt}`.toLowerCase().includes(query))
@@ -829,8 +889,9 @@
     function renderPackList() {
       const sources = getFilteredSources();
       els.packList.innerHTML = '';
-      els.packCount.textContent = `${sources.length} sources`;
-      els.packSummary.textContent = `Visible ${sources.length} source rows`;
+      const keptCount = getReaderEligibleFeeds().length;
+      els.packCount.textContent = `${keptCount} active sources`;
+      els.packSummary.textContent = keptCount ? `Active kept feeds ${keptCount}` : 'Keep feeds in Discover to build pack';
 
       sources.forEach(src => {
         const row = document.createElement('div');
@@ -846,6 +907,7 @@
           renderPackList();
           renderHeadlineList();
           renderStoryInspector();
+          refreshReaderStatus();
         });
         els.packList.appendChild(row);
       });
@@ -855,25 +917,24 @@
       const rows = getFilteredHeadlines();
       els.headlineList.innerHTML = '';
       els.headlineCount.textContent = `${rows.length} shown`;
-      els.headlineSummary.textContent = `Range ${state.reader.rangeHours}h · Source ${state.reader.selectedSourceId}`;
+      els.headlineSummary.textContent = `Range ${state.reader.rangeHours}h · Source ${state.reader.selectedSourceId} · Loaded ${buildDerivedReaderModel().stories.length}`;
       if (!rows.length) {
         els.headlineList.innerHTML = '<div class="hint">No stories match source/search/range filters.</div>';
         return;
       }
       rows.forEach(st => {
-        const source = sourceCatalog.find(s => s.id === st.sourceId);
         const row = document.createElement('div');
         row.className = `headline-row ${state.reader.selectedHeadlineId === st.id ? 'selected' : ''}`;
         row.innerHTML = `
           <div class="headline-main">
-            <div class="topline"><span class="headline-source">${source.label}</span><span class="mono">${new Date(st.publishedAt).toLocaleString()}</span></div>
+            <div class="topline"><span class="headline-source">${st.sourceLabel}</span><span class="mono">${new Date(st.publishedAt).toLocaleString()}</span></div>
             <div class="title">${st.title}</div>
             <div class="sub">${st.excerpt}</div>
           </div>
           <span class="badge">${fmtAge(st.publishedAt)}</span>
           <div class="preview">
             <div class="p-title">${st.title}</div>
-            <div class="p-line">Source: ${source.label} · ${source.domain}</div>
+            <div class="p-line">Source: ${st.sourceLabel} · ${st.sourceDomain}</div>
             <div class="p-line">Published: ${new Date(st.publishedAt).toLocaleString()}</div>
             <div class="p-line">${st.excerpt}</div>
             <div class="p-line mono">${st.url}</div>
@@ -883,21 +944,21 @@
           state.reader.selectedHeadlineId = st.id;
           renderHeadlineList();
           renderStoryInspector();
+          refreshReaderStatus();
         });
         els.headlineList.appendChild(row);
       });
     }
 
     function renderStoryInspector() {
-      const st = readerStories.find(s => s.id === state.reader.selectedHeadlineId);
+      const st = buildDerivedReaderModel().stories.find(s => s.id === state.reader.selectedHeadlineId);
       if (!st) {
         els.storyInspector.innerHTML = '<div class="hint">Select a headline row to inspect story details.</div>';
         return;
       }
-      const source = sourceCatalog.find(s => s.id === st.sourceId);
       els.storyInspector.innerHTML = `
         <div class="block"><div class="k">Story</div><div class="v">${st.title}</div><div class="s mono">${st.url}</div></div>
-        <div class="block"><div class="k">Source</div><div class="s">${source.label} · ${source.domain}</div><div class="s">Published ${new Date(st.publishedAt).toLocaleString()}</div><div class="s">Author ${st.author}</div></div>
+        <div class="block"><div class="k">Source</div><div class="s">${st.sourceLabel} · ${st.sourceDomain}</div><div class="s">Published ${new Date(st.publishedAt).toLocaleString()}</div><div class="s">Author ${st.author}</div></div>
         <div class="block"><div class="k">Excerpt</div><div class="s">${st.excerpt}</div></div>
       `;
     }
@@ -912,6 +973,30 @@
       renderFeedList();
       renderDiscoverInspector();
       updateDiscoverMetrics();
+      syncReaderSelection();
+      renderPackList();
+      renderHeadlineList();
+      renderStoryInspector();
+      refreshReaderStatus();
+    }
+
+    function syncReaderSelection() {
+      const sources = buildDerivedReaderModel().sources;
+      if (!sources.some(s => s.id === state.reader.selectedSourceId)) state.reader.selectedSourceId = 'all';
+      const visible = getFilteredHeadlines();
+      if (state.reader.selectedHeadlineId && !visible.some(s => s.id === state.reader.selectedHeadlineId)) {
+        state.reader.selectedHeadlineId = visible[0]?.id || null;
+      }
+    }
+
+    function refreshReaderStatus() {
+      if (state.mode !== 'reader') return;
+      const visible = getFilteredHeadlines().length;
+      const loaded = buildDerivedReaderModel().stories.length;
+      els.toolbarContext.textContent = 'Loaded';
+      els.toolbarSecondary.textContent = `${visible} visible stories`;
+      els.statusLeft.textContent = 'READER · Active';
+      els.statusRight.textContent = `Loaded ${loaded} · Range ${state.reader.rangeHours}h`;
     }
 
     function setMode(mode) {
@@ -925,12 +1010,16 @@
       els.readerActions.classList.toggle('hidden', isDiscover);
       els.toolbarMode.textContent = isDiscover ? 'Discover' : 'Reader';
       if (isDiscover) {
+        if (state.session.running) els.toolbarContext.textContent = 'Running';
+        else if (state.session.stopped) els.toolbarContext.textContent = 'Stopped';
+        else if (state.session.feeds.length) els.toolbarContext.textContent = 'Complete';
+        else els.toolbarContext.textContent = 'Idle';
+        els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Feeds ${state.session.feeds.length}`;
         els.statusLeft.textContent = `DISCOVER · ${els.toolbarContext.textContent}`;
+        els.statusRight.textContent = els.toolbarSecondary.textContent;
       } else {
-        els.toolbarContext.textContent = 'Loaded';
-        els.toolbarSecondary.textContent = `${getFilteredHeadlines().length} visible stories`;
-        els.statusLeft.textContent = 'READER · Active';
-        els.statusRight.textContent = `Range ${state.reader.rangeHours}h`; 
+        syncReaderSelection();
+        refreshReaderStatus();
       }
     }
 
@@ -951,7 +1040,16 @@
       els.clearBtn.addEventListener('click', clearSession);
       els.keepSelectedBtn.addEventListener('click', () => batchSetSelected('kept'));
       els.excludeSelectedBtn.addEventListener('click', () => batchSetSelected('excluded'));
-      els.openReaderBtn.addEventListener('click', () => setMode('reader'));
+      els.openReaderBtn.addEventListener('click', () => {
+        const kept = getReaderEligibleFeeds().length;
+        log('PACK', `Reader pack derived from current session (${kept} kept feed${kept === 1 ? '' : 's'})`, kept ? 'ok' : 'warn');
+        syncReaderSelection();
+        renderPackList();
+        renderHeadlineList();
+        renderStoryInspector();
+        refreshReaderStatus();
+        setMode('reader');
+      });
       els.backDiscoverBtn.addEventListener('click', () => setMode('discover'));
 
       [els.discoverFilter, els.discoverSearch].forEach(el => el.addEventListener('input', () => {
@@ -967,18 +1065,21 @@
         renderPackList();
         renderHeadlineList();
         renderStoryInspector();
+        refreshReaderStatus();
       });
 
       els.headlineSearch.addEventListener('input', () => {
         state.reader.headlineSearch = els.headlineSearch.value.trim();
         renderHeadlineList();
         renderStoryInspector();
+        refreshReaderStatus();
       });
 
       els.rangeSelect.addEventListener('change', () => {
         state.reader.rangeHours = Number(els.rangeSelect.value);
         renderHeadlineList();
         renderStoryInspector();
+        refreshReaderStatus();
       });
     }
 
