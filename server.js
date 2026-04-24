@@ -1,23 +1,19 @@
-const http = require('http');
-const fs = require('fs');
+const express = require('express');
 const path = require('path');
+const cheerio = require('cheerio');
+const Parser = require('rss-parser');
 
+const app = express();
 const PORT = Number(process.env.PORT || 3000);
-const ROOT = __dirname;
+const parser = new Parser({ timeout: 12000 });
 
 const FEED_GUESSES = ['/feed', '/feed.xml', '/rss', '/rss.xml', '/atom.xml', '/index.xml', '/feed.json'];
-const CANDIDATE_HINTS = /rss|feed|atom|xml|jsonfeed|subscribe/i;
+const FEED_TYPE_PATTERN = /(application\/(rss|atom)\+xml|application\/xml|text\/xml|application\/feed\+json|application\/json)/i;
+const FEED_HINT_PATTERN = /(rss|feed|atom|xml|jsonfeed|subscribe)/i;
 const BINARY_EXT = /\.(png|jpe?g|gif|webp|svg|ico|pdf|zip|gz|mp4|mp3|avi|mov|woff2?|ttf)(\?|$)/i;
 
-function json(res, status, data) {
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8' });
-  res.end(JSON.stringify(data));
-}
-
-function text(res, status, value, contentType = 'text/plain; charset=utf-8') {
-  res.writeHead(status, { 'content-type': contentType });
-  res.end(value);
-}
+app.use(express.json({ limit: '1mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
 
 function normalizeUrl(input, base) {
   if (!input) return null;
@@ -34,7 +30,11 @@ function normalizeUrl(input, base) {
 }
 
 function getDomain(url) {
-  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
 }
 
 function parseDateMaybe(value) {
@@ -64,142 +64,89 @@ async function fetchText(url) {
       accept: 'text/html,application/xml,text/xml,application/rss+xml,application/atom+xml,application/feed+json,application/json,*/*'
     }
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+
   return { text: await res.text(), contentType: res.headers.get('content-type') || '' };
 }
 
-function matchesAll(str, regex) {
-  const out = [];
-  let m;
-  while ((m = regex.exec(str))) out.push(m);
-  return out;
-}
-
-function decodeXml(s) {
-  return String(s || '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
-}
-
-function tag(block, name) {
-  const esc = name.replace(':', '\\:');
-  const m = block.match(new RegExp(`<${esc}[^>]*>([\\s\\S]*?)<\\/${esc}>`, 'i'));
-  return m ? decodeXml(stripHtml(m[1])) : '';
-}
-
-function parseJsonFeed(text, feedUrl) {
-  const obj = JSON.parse(text);
-  if (!obj || !Array.isArray(obj.items) || !(obj.version || obj.feed_url || obj.home_page_url)) throw new Error('not-json-feed');
-  return {
-    title: String(obj.title || getDomain(feedUrl) || 'JSON Feed').trim(),
-    format: 'json',
-    items: obj.items.slice(0, 80).map((it, idx) => ({
-      id: it.id || `${feedUrl}#j${idx}`,
-      title: String(it.title || 'Untitled item').trim(),
-      url: normalizeUrl(it.url || it.external_url || '', feedUrl) || feedUrl,
-      excerpt: stripHtml(it.summary || it.content_text || it.content_html || '').slice(0, 360),
-      publishedAt: parseDateMaybe(it.date_published || it.date_modified),
-      author: it.author?.name || ''
-    }))
-  };
-}
-
-function parseRss(text, feedUrl) {
-  const channel = text.match(/<channel[\s\S]*?<\/channel>/i)?.[0] || text;
-  const itemBlocks = matchesAll(channel, /<item\b[\s\S]*?<\/item>/gi).map(m => m[0]).slice(0, 80);
-  if (!itemBlocks.length && !/<rss|rdf\:rdf|channel/i.test(text)) throw new Error('not-rss');
-  return {
-    title: tag(channel, 'title') || getDomain(feedUrl) || 'RSS Feed',
-    format: 'rss',
-    items: itemBlocks.map((item, idx) => ({
-      id: tag(item, 'guid') || `${feedUrl}#r${idx}`,
-      title: tag(item, 'title') || 'Untitled item',
-      url: normalizeUrl(tag(item, 'link'), feedUrl) || feedUrl,
-      excerpt: stripHtml(tag(item, 'description') || tag(item, 'content:encoded')).slice(0, 360),
-      publishedAt: parseDateMaybe(tag(item, 'pubDate') || tag(item, 'dc:date')),
-      author: tag(item, 'author') || tag(item, 'dc:creator')
-    }))
-  };
-}
-
-function parseAtom(text, feedUrl) {
-  const feed = text.match(/<feed\b[\s\S]*?<\/feed>/i)?.[0];
-  if (!feed) throw new Error('not-atom');
-  const entries = matchesAll(feed, /<entry\b[\s\S]*?<\/entry>/gi).map(m => m[0]).slice(0, 80);
-  if (!entries.length) throw new Error('not-atom');
-  return {
-    title: tag(feed, 'title') || getDomain(feedUrl) || 'Atom Feed',
-    format: 'atom',
-    items: entries.map((entry, idx) => {
-      const link = entry.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["']alternate["'][^>]*>/i)?.[1]
-        || entry.match(/<link[^>]*rel=["']alternate["'][^>]*href=["']([^"']+)["'][^>]*>/i)?.[1]
-        || entry.match(/<link[^>]*href=["']([^"']+)["'][^>]*>/i)?.[1]
-        || '';
-      return {
-        id: tag(entry, 'id') || `${feedUrl}#a${idx}`,
-        title: tag(entry, 'title') || 'Untitled item',
-        url: normalizeUrl(link, feedUrl) || feedUrl,
-        excerpt: stripHtml(tag(entry, 'summary') || tag(entry, 'content')).slice(0, 360),
-        publishedAt: parseDateMaybe(tag(entry, 'published') || tag(entry, 'updated')),
-        author: tag(entry, 'name') || tag(entry, 'author')
-      };
-    })
-  };
-}
-
-function parseFeedPayload(text, contentType, feedUrl) {
-  const trimmed = String(text || '').trim();
-  if (!trimmed) throw new Error('empty-feed');
-  if (trimmed.startsWith('{') || /json/i.test(contentType)) {
-    try { return parseJsonFeed(trimmed, feedUrl); } catch {}
-  }
-  try { return parseRss(trimmed, feedUrl); } catch {}
-  return parseAtom(trimmed, feedUrl);
-}
-
 function extractCandidates(html, seedUrl) {
-  const set = new Set();
-  const linkMatches = matchesAll(html, /<link\b[^>]*rel=["'][^"']*alternate[^"']*["'][^>]*>/gi);
-  linkMatches.forEach(([row]) => {
-    const href = row.match(/href=["']([^"']+)["']/i)?.[1] || '';
-    const type = (row.match(/type=["']([^"']+)["']/i)?.[1] || '').toLowerCase();
-    if (!href || !/(rss|atom|xml|json)/i.test(type)) return;
+  const $ = cheerio.load(html);
+  const found = new Set();
+
+  $('link[rel]').each((_, el) => {
+    const rel = ($(el).attr('rel') || '').toLowerCase();
+    if (!rel.includes('alternate')) return;
+
+    const href = $(el).attr('href') || '';
+    const type = ($(el).attr('type') || '').toLowerCase();
+    if (!href || (!FEED_TYPE_PATTERN.test(type) && !FEED_HINT_PATTERN.test(href))) return;
+
     const normalized = normalizeUrl(href, seedUrl);
-    if (normalized && !BINARY_EXT.test(normalized)) set.add(normalized);
+    if (normalized && !BINARY_EXT.test(normalized)) found.add(normalized);
   });
 
-  const aMatches = matchesAll(html, /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi);
-  aMatches.forEach((m) => {
-    const href = m[1] || '';
-    const label = stripHtml(m[2] || '');
-    if (!CANDIDATE_HINTS.test(`${href} ${label}`)) return;
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const label = ($(el).text() || '').trim();
+    if (!FEED_HINT_PATTERN.test(`${href} ${label}`)) return;
+
     const normalized = normalizeUrl(href, seedUrl);
-    if (normalized && !BINARY_EXT.test(normalized)) set.add(normalized);
+    if (normalized && !BINARY_EXT.test(normalized)) found.add(normalized);
   });
 
-  FEED_GUESSES.forEach((g) => {
-    const normalized = normalizeUrl(g, seedUrl);
-    if (normalized) set.add(normalized);
+  FEED_GUESSES.forEach((guess) => {
+    const normalized = normalizeUrl(guess, seedUrl);
+    if (normalized) found.add(normalized);
   });
 
-  return [...set];
+  return [...found];
+}
+
+function normalizeParsedItem(item, feedUrl, idx) {
+  const url = normalizeUrl(item.link || item.guid || item.id || '', feedUrl) || feedUrl;
+  const publishedAt = parseDateMaybe(item.isoDate || item.pubDate || item.published || item.updated);
+
+  return {
+    id: item.guid || item.id || `${feedUrl}#${idx}`,
+    title: String(item.title || 'Untitled item').trim(),
+    url,
+    excerpt: stripHtml(item.contentSnippet || item.summary || item.content || '').slice(0, 360),
+    publishedAt,
+    author: item.creator || item.author || ''
+  };
 }
 
 function toFeedRecord(seedUrl, feedUrl, parsed) {
-  const latest = parsed.items.find(i => i.title || i.url) || null;
+  const items = (parsed.items || []).slice(0, 80).map((item, idx) => normalizeParsedItem(item, feedUrl, idx));
+  const latest = items.find((item) => item.title || item.url) || null;
   const latestAt = latest?.publishedAt || null;
+
   return {
     id: `f-${Buffer.from(feedUrl).toString('base64').replace(/=+$/g, '').slice(-12)}`,
     sourceSeed: seedUrl,
     sourceDomain: getDomain(seedUrl),
-    title: parsed.title,
+    title: String(parsed.title || getDomain(feedUrl) || 'Feed').trim(),
     url: feedUrl,
-    format: parsed.format,
+    format: parsed.feedType || 'rss',
     state: 'candidate',
     latestTitle: latest?.title || 'No items detected',
     latestUrl: latest?.url || '',
     latestAt,
     latestAge: latestAt ? formatAge(latestAt) : 'unknown',
-    items: parsed.items
+    items
   };
+}
+
+async function parseFeedFromUrl(feedUrl) {
+  const fetched = await fetchText(feedUrl);
+  const parsed = await parser.parseString(fetched.text);
+  if (!parsed || !Array.isArray(parsed.items) || !parsed.items.length) {
+    throw new Error('invalid-feed');
+  }
+  return parsed;
 }
 
 async function discoverFeeds(seeds) {
@@ -217,15 +164,14 @@ async function discoverFeeds(seeds) {
     }
 
     const candidates = extractCandidates(page.text, seed);
-    candidates.forEach(c => logs.push({ code: 'DETECT', level: 'ok', message: `candidate ${c}` }));
+    candidates.forEach((candidate) => logs.push({ code: 'DETECT', level: 'ok', message: `candidate ${candidate}` }));
 
     for (const candidate of candidates) {
       if (dedupe.has(candidate)) continue;
       try {
-        const feed = await fetchText(candidate);
-        const parsed = parseFeedPayload(feed.text, feed.contentType, candidate);
+        const parsed = await parseFeedFromUrl(candidate);
         dedupe.set(candidate, toFeedRecord(seed, candidate, parsed));
-        logs.push({ code: 'VALID', level: 'ok', message: `${parsed.format} ${candidate}` });
+        logs.push({ code: 'VALID', level: 'ok', message: `${parsed.feedType || 'rss'} ${candidate}` });
       } catch {
         logs.push({ code: 'REJECT', level: 'warn', message: `invalid feed ${candidate}` });
       }
@@ -243,21 +189,18 @@ async function loadReaderItems(feeds) {
   for (const feed of feeds) {
     const url = normalizeUrl(feed.url);
     if (!url) continue;
+
     try {
-      const fetched = await fetchText(url);
-      const parsed = parseFeedPayload(fetched.text, fetched.contentType, url);
-      parsed.items.forEach((item, idx) => {
+      const parsed = await parseFeedFromUrl(url);
+      (parsed.items || []).slice(0, 80).forEach((item, idx) => {
+        const normalized = normalizeParsedItem(item, url, idx);
         items.push({
           id: `${feed.id || Buffer.from(url).toString('base64').slice(-10)}-${idx}`,
           sourceId: feed.id || url,
-          sourceLabel: feed.title || parsed.title,
+          sourceLabel: feed.title || parsed.title || getDomain(url),
           sourceDomain: feed.sourceDomain || getDomain(url),
           feedUrl: url,
-          title: item.title,
-          excerpt: item.excerpt,
-          publishedAt: item.publishedAt,
-          url: item.url,
-          author: item.author || ''
+          ...normalized
         });
       });
       logs.push({ code: 'VALID', level: 'ok', message: `reader loaded ${url}` });
@@ -270,57 +213,28 @@ async function loadReaderItems(feeds) {
   return { items, logs };
 }
 
-function serveStatic(req, res) {
-  const reqPath = req.url === '/' ? '/test.html' : req.url.split('?')[0];
-  const filePath = path.join(ROOT, reqPath);
-  if (!filePath.startsWith(ROOT)) return text(res, 403, 'forbidden');
-  fs.readFile(filePath, (err, data) => {
-    if (err) return text(res, 404, 'not found');
-    const ext = path.extname(filePath).toLowerCase();
-    const types = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8' };
-    text(res, 200, data, types[ext] || 'application/octet-stream');
-  });
-}
-
-function readJsonBody(req) {
-  return new Promise((resolve, reject) => {
-    let raw = '';
-    req.on('data', chunk => {
-      raw += chunk;
-      if (raw.length > 1_000_000) reject(new Error('body-too-large'));
-    });
-    req.on('end', () => {
-      try { resolve(raw ? JSON.parse(raw) : {}); } catch { reject(new Error('invalid-json')); }
-    });
-    req.on('error', reject);
-  });
-}
-
-const server = http.createServer(async (req, res) => {
-  if (req.method === 'POST' && req.url === '/api/discover') {
-    try {
-      const body = await readJsonBody(req);
-      const seeds = Array.isArray(body.seeds) ? body.seeds.map(s => normalizeUrl(s)).filter(Boolean) : [];
-      if (!seeds.length) return json(res, 400, { error: 'No valid seeds supplied', feeds: [], logs: [] });
-      return json(res, 200, await discoverFeeds(seeds));
-    } catch (err) {
-      return json(res, 500, { error: err.message || 'discover-failed', feeds: [], logs: [] });
+app.post('/api/discover', async (req, res) => {
+  try {
+    const seeds = Array.isArray(req.body?.seeds) ? req.body.seeds.map((s) => normalizeUrl(s)).filter(Boolean) : [];
+    if (!seeds.length) {
+      return res.status(400).json({ error: 'No valid seeds supplied', feeds: [], logs: [] });
     }
-  }
 
-  if (req.method === 'POST' && req.url === '/api/reader-items') {
-    try {
-      const body = await readJsonBody(req);
-      const feeds = Array.isArray(body.feeds) ? body.feeds : [];
-      return json(res, 200, await loadReaderItems(feeds));
-    } catch (err) {
-      return json(res, 500, { error: err.message || 'reader-failed', items: [], logs: [] });
-    }
+    return res.json(await discoverFeeds(seeds));
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'discover-failed', feeds: [], logs: [] });
   }
-
-  serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
+app.post('/api/reader-items', async (req, res) => {
+  try {
+    const feeds = Array.isArray(req.body?.feeds) ? req.body.feeds : [];
+    return res.json(await loadReaderItems(feeds));
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'reader-failed', items: [], logs: [] });
+  }
+});
+
+app.listen(PORT, () => {
   console.log(`RSS Discovery running on http://localhost:${PORT}`);
 });
