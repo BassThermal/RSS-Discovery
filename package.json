@@ -1,10 +1,15 @@
 {
   "name": "rss-discovery",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Compact RSS discovery app with local backend proxy",
+  "description": "Compact RSS discovery app with local Express backend",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "express": "^5.1.0",
+    "rss-parser": "^3.13.0"
   }
 }
