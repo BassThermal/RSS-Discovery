@@ -82,9 +82,36 @@ function unwrapKnownWrapper(candidateUrl) {
   try {
     const url = new URL(candidateUrl);
     const host = url.hostname.replace(/^www\./, '');
-    const qUrl = normalizeUrl(url.searchParams.get('url') || url.searchParams.get('u') || '');
-    if (host.endsWith('feedspot.com') && url.pathname.toLowerCase().includes('infiniterss.php') && qUrl) {
-      return { canonical: qUrl, wrapped: candidateUrl, kind: 'feedspot-wrapper' };
+    const pathname = url.pathname.toLowerCase();
+    const rawTargets = [];
+
+    ['url', 'u', 'target', 'dest', 'destination', 'feed', 'q'].forEach((key) => {
+      const v = url.searchParams.get(key);
+      if (v) rawTargets.push(v);
+    });
+
+    for (const raw of rawTargets) {
+      let decoded = String(raw).trim();
+      for (let i = 0; i < 2; i += 1) {
+        try {
+          const next = decodeURIComponent(decoded);
+          if (next === decoded) break;
+          decoded = next;
+        } catch {
+          break;
+        }
+      }
+
+      if (/^site:/i.test(decoded)) decoded = decoded.replace(/^site:/i, '').trim();
+      const match = decoded.match(/https?:\/\/[^\s"'<>]+/i);
+      const candidate = normalizeUrl(match ? match[0] : decoded);
+      if (!candidate) continue;
+      if (candidate === candidateUrl) continue;
+      return { canonical: candidate, wrapped: candidateUrl, kind: 'feedspot-wrapper' };
+    }
+
+    if (host.endsWith('feedspot.com') && pathname.includes('infiniterss.php')) {
+      return { canonical: null, wrapped: candidateUrl, kind: 'feedspot-wrapper' };
     }
     return { canonical: candidateUrl, wrapped: null, kind: '' };
   } catch {
@@ -103,10 +130,7 @@ function rejectCandidate(rawUrl, context = {}) {
 
     if ([...SOCIAL_DOMAINS].some((d) => host === d || host.endsWith(`.${d}`))) return 'social-domain';
 
-    if (host.endsWith('feedspot.com') && pathname.includes('infiniterss.php')) {
-      const qUrl = normalizeUrl(url.searchParams.get('url') || url.searchParams.get('u') || '');
-      if (!qUrl) return 'feedspot-wrapper-empty';
-    }
+    if (host.endsWith('feedspot.com') && pathname.includes('infiniterss.php')) return 'wrapper-not-feed';
 
     if (/\bq=site:\b/i.test(query) && !url.searchParams.get('q')?.replace(/site:/i, '').trim()) return 'empty-site-wrapper';
 
@@ -137,17 +161,34 @@ function extractCandidates(html, seedUrl) {
     const normalized = normalizeUrl(href, seedUrl);
     if (!normalized || seen.has(normalized)) return;
     seen.add(normalized);
-    const rejectedBy = rejectCandidate(normalized, context);
-    if (rejectedBy) return;
 
     const unwrapped = unwrapKnownWrapper(normalized);
-    const canonical = unwrapped.canonical;
-    if (!canonical || seen.has(canonical)) return;
-    seen.add(canonical);
-    const canonicalRejectedBy = rejectCandidate(canonical, context);
-    if (canonicalRejectedBy) return;
+    if (unwrapped.wrapped && unwrapped.canonical) {
+      const canonical = unwrapped.canonical;
+      if (!seen.has(canonical)) {
+        seen.add(canonical);
+        const canonicalRejectedBy = rejectCandidate(canonical, context);
+        if (!canonicalRejectedBy) {
+          found.push({ url: canonical, wrappedUrl: unwrapped.wrapped, kind: context.kind || unwrapped.kind || 'anchor', wrapperAction: 'unwrapped' });
+        } else {
+          found.push({ url: canonical, wrappedUrl: unwrapped.wrapped, kind: context.kind || unwrapped.kind || 'anchor', rejectedBy: canonicalRejectedBy, wrapperAction: 'unwrapped-rejected' });
+        }
+      }
+      return;
+    }
 
-    found.push({ url: canonical, wrappedUrl: unwrapped.wrapped, kind: context.kind || unwrapped.kind || 'anchor' });
+    if (unwrapped.wrapped && !unwrapped.canonical) {
+      found.push({ url: normalized, wrappedUrl: normalized, kind: context.kind || unwrapped.kind || 'anchor', rejectedBy: 'wrapper-no-target', wrapperAction: 'unwrapped-empty' });
+      return;
+    }
+
+    const rejectedBy = rejectCandidate(normalized, context);
+    if (rejectedBy) {
+      found.push({ url: normalized, wrappedUrl: '', kind: context.kind || 'anchor', rejectedBy });
+      return;
+    }
+
+    found.push({ url: normalized, wrappedUrl: unwrapped.wrapped, kind: context.kind || unwrapped.kind || 'anchor' });
   }
 
   $('link[rel]').each((_, el) => {
@@ -164,7 +205,6 @@ function extractCandidates(html, seedUrl) {
     const href = $(el).attr('href') || '';
     const label = ($(el).text() || '').trim();
     const rel = ($(el).attr('rel') || '').toLowerCase();
-    if (!FEED_HINT_PATTERN.test(`${href} ${label}`)) return;
     addCandidate(href, { kind: 'anchor', anchorText: label, rel });
   });
 
@@ -249,8 +289,19 @@ async function discoverFeeds(seeds) {
       continue;
     }
 
-    const candidates = extractCandidates(page.text, seed);
-    candidates.forEach((candidate) => logs.push({ code: 'DETECT', level: 'ok', message: `candidate ${candidate.url}` }));
+    const extracted = extractCandidates(page.text, seed);
+    const candidates = extracted.filter((candidate) => !candidate.rejectedBy);
+    extracted.forEach((candidate) => {
+      if (candidate.wrapperAction === 'unwrapped') {
+        logs.push({ code: 'UNWRAP', level: 'ok', message: `recovered ${candidate.url} from ${candidate.wrappedUrl}` });
+      } else if (candidate.wrapperAction === 'unwrapped-empty') {
+        logs.push({ code: 'REJECT', level: 'warn', message: `wrapper with no recoverable target ${candidate.url}` });
+      } else if (candidate.rejectedBy) {
+        logs.push({ code: 'REJECT', level: 'warn', message: `${candidate.rejectedBy} ${candidate.url}` });
+      } else {
+        logs.push({ code: 'DETECT', level: 'ok', message: `candidate ${candidate.url}` });
+      }
+    });
 
     for (const candidate of candidates) {
       if (dedupe.has(candidate.url)) continue;
