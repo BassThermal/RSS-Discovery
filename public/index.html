@@ -107,7 +107,11 @@
         <section class="pane">
           <div class="pane-head"><div class="pane-title">Discovered feeds</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
           <div class="pane-toolbar">
-            <div class="tiny" id="discoverSummary">0 total · 0 candidate · 0 kept · 0 excluded</div>
+            <div class="toolbar-inline">
+              <div class="tiny" id="discoverSummary">0 total · 0 candidate · 0 kept · 0 excluded</div>
+              <button class="btn micro ghost" id="selectVisibleBtn">Select visible</button>
+              <button class="btn micro ghost" id="clearVisibleBtn">Clear visible</button>
+            </div>
           </div>
           <div class="pane-body feed-list" id="feedList"></div>
         </section>
