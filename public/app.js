@@ -99,7 +99,7 @@ const escapeHtml = (value) => String(value || '')
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;');
 
-const toFaviconUrl = (domain) => `https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=32`;
+const toFaviconUrl = (domain) => `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`;
 
 function parseSeeds(raw) {
   return [...new Set(raw.split(/[\s,\n]+/g).map((v) => normalizeUrl(v)).filter(Boolean))];
@@ -115,10 +115,10 @@ function formatAge(ts) {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-function iconMarkup(domain, label) {
+function iconMarkup(domain, label, iconUrl = '') {
   const safeDomain = escapeHtml(domain || '');
   const safeLabel = escapeHtml((label || domain || '?').trim().slice(0, 1).toUpperCase() || '?');
-  const src = safeDomain ? toFaviconUrl(safeDomain) : '';
+  const src = iconUrl || (safeDomain ? toFaviconUrl(safeDomain) : '');
   if (!src) return `<span class="source-icon fallback">${safeLabel}</span>`;
   return `<span class="source-icon-wrap"><img class="source-icon" loading="lazy" src="${src}" alt="" onerror="this.remove(); this.parentNode.classList.add('fallback'); this.parentNode.textContent='${safeLabel}';" /></span>`;
 }
@@ -182,6 +182,7 @@ function normalizeFeed(raw) {
     sourceSeed: normalizeUrl(raw?.sourceSeed || url) || url,
     sourceDomain,
     sourceHome: normalizeUrl(raw?.sourceHome || '', url) || '',
+    sourceIcon: raw?.sourceIcon || toFaviconUrl(sourceDomain),
     title: raw?.title || sourceDomain || getDomain(url),
     url,
     wrappedUrl: normalizeUrl(raw?.wrappedUrl || '', url) || '',
@@ -204,7 +205,8 @@ function deriveReaderSourcesFromFeeds(feeds) {
     domain: feed.sourceDomain,
     feedUrl: feed.url,
     active: true,
-    stories: (feed.items || []).length
+    stories: (feed.items || []).length,
+    iconUrl: feed.sourceIcon || toFaviconUrl(feed.sourceDomain)
   }));
   const total = rows.reduce((n, r) => n + r.stories, 0);
   return [{ id: 'all', label: 'All kept feeds', domain: 'session', feedUrl: '', active: true, stories: total }, ...rows];
@@ -219,6 +221,7 @@ function deriveStoriesFromFeeds(feeds) {
         sourceId: feed.id,
         sourceLabel: feed.title,
         sourceDomain: feed.sourceDomain || getDomain(feed.url),
+        sourceIcon: feed.sourceIcon || toFaviconUrl(feed.sourceDomain || getDomain(feed.url)),
         feedUrl: feed.url,
         title: item.title || 'Untitled item',
         excerpt: item.excerpt || '',
@@ -281,7 +284,7 @@ function renderFeedList() {
     row.className = `feed-row ${feed.state === 'excluded' ? 'excluded' : ''} ${feed.state === 'kept' ? 'kept' : ''} ${feed.id === state.session.selectedFeedId ? 'selected' : ''}`;
     row.innerHTML = `
       <input type="checkbox" data-id="${feed.id}" ${state.session.selectedFeedIds.has(feed.id) ? 'checked' : ''} />
-      ${iconMarkup(feed.sourceDomain, feed.title)}
+      ${iconMarkup(feed.sourceDomain, feed.title, feed.sourceIcon)}
       <div class="feed-main">
         <div class="topline"><span class="domain">${escapeHtml(feed.sourceDomain)}</span><span class="badge type">${escapeHtml(feed.format)}</span><span class="badge state-${feed.state}">${feed.state}</span></div>
         <div class="title clamp-1">${escapeHtml(feed.title)}</div>
@@ -366,7 +369,7 @@ function renderPackList() {
   sources.forEach((src) => {
     const row = document.createElement('div');
     row.className = `pack-row ${state.reader.selectedSourceId === src.id ? 'selected' : ''}`;
-    row.innerHTML = `${iconMarkup(src.domain, src.label)}<div class="pack-main"><div class="pack-title clamp-1">${escapeHtml(src.label)}</div><div class="sub mono">${escapeHtml(src.domain)}</div></div><span class="badge">${src.stories}</span>`;
+    row.innerHTML = `${iconMarkup(src.domain, src.label, src.iconUrl)}<div class="pack-main"><div class="pack-title clamp-1">${escapeHtml(src.label)}</div><div class="sub mono">${escapeHtml(src.domain)}</div></div><span class="badge">${src.stories}</span>`;
     row.addEventListener('click', () => {
       state.reader.selectedSourceId = src.id;
       state.reader.selectedHeadlineId = null;
@@ -390,7 +393,7 @@ function renderHeadlineList() {
   rows.forEach((st) => {
     const row = document.createElement('div');
     row.className = `headline-row ${state.reader.selectedHeadlineId === st.id ? 'selected' : ''}`;
-    row.innerHTML = `<div class="headline-main"><div class="topline"><span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet">${escapeHtml(st.sourceDomain)}</span><span class="mono quiet">${st.publishedAt ? escapeHtml(new Date(st.publishedAt).toLocaleString()) : 'No date'}</span></div><div class="title clamp-2" dir="auto">${escapeHtml(st.title)}</div><div class="sub clamp-1" dir="auto">${escapeHtml(st.excerpt || 'No excerpt available.')}</div></div><span class="badge age">${st.publishedAt ? formatAge(st.publishedAt) : 'n/a'}</span><div class="preview"><div class="p-title">${escapeHtml(st.title)}</div><div class="p-line">Source: ${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="p-line">Published: ${st.publishedAt ? escapeHtml(new Date(st.publishedAt).toLocaleString()) : 'No date'}</div><div class="p-line">${escapeHtml((st.excerpt || 'No excerpt').slice(0, 120))}</div><div class="p-line mono">${escapeHtml(st.url)}</div></div>`;
+    row.innerHTML = `<div class="headline-main"><div class="headline-meta"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><span class="mono quiet story-time">${st.publishedAt ? escapeHtml(new Date(st.publishedAt).toLocaleString()) : 'No date'}</span></div><div class="title clamp-2" dir="auto">${escapeHtml(st.title)}</div><div class="sub clamp-1" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><span class="badge age">${st.publishedAt ? formatAge(st.publishedAt) : 'n/a'}</span><div class="preview"><div class="p-title">${escapeHtml(st.title)}</div><div class="p-line">Source: ${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="p-line">Published: ${st.publishedAt ? escapeHtml(new Date(st.publishedAt).toLocaleString()) : 'No date'}</div><div class="p-line">${escapeHtml((st.excerpt || 'No excerpt').slice(0, 120))}</div><div class="p-line mono">${escapeHtml(st.url)}</div></div>`;
     row.addEventListener('click', () => {
       state.reader.selectedHeadlineId = st.id;
       renderHeadlineList();
@@ -436,7 +439,7 @@ function syncReaderSelection() {
 function refreshReaderStatus() {
   if (state.mode !== 'reader') return;
   const visible = getFilteredHeadlines().length;
-  els.toolbarContext.textContent = 'Reader active';
+  els.toolbarContext.textContent = `Loading ${state.session.feeds.filter((f) => f.state === 'kept').length} active feeds`;
   els.toolbarSecondary.textContent = `${visible} visible stories`;
   els.statusLeft.textContent = 'READER · Active';
   els.statusRight.textContent = `Loaded ${state.reader.stories.length} · Range ${state.reader.rangeHours}h`;
@@ -452,7 +455,7 @@ async function refreshReaderItemsFromBackend() {
   (payload.logs || []).forEach((row) => log(row.code || 'READER', row.message || '', row.level === 'warn' ? 'warn' : row.level === 'error' ? 'err' : 'ok'));
   const itemsByFeed = new Map();
   (payload.items || []).forEach((item) => {
-    const next = { ...item, publishedAt: typeof item.publishedAt === 'number' ? item.publishedAt : parseDateMaybe(item.publishedAt) || 0 };
+    const next = { ...item, sourceIcon: item.sourceIcon || toFaviconUrl(item.sourceDomain), publishedAt: typeof item.publishedAt === 'number' ? item.publishedAt : parseDateMaybe(item.publishedAt) || 0 };
     if (!itemsByFeed.has(next.sourceId)) itemsByFeed.set(next.sourceId, []);
     itemsByFeed.get(next.sourceId).push(next);
   });
@@ -484,24 +487,83 @@ async function runDiscoverySession(seeds) {
   state.session.running = true;
   state.session.stopped = false;
   state.session.seeds = seeds.length;
-  setDiscoverStatus('Running', `Seeds ${seeds.length}`);
+  setDiscoverStatus('Scanning seed page', `Seeds ${seeds.length} · Feeds 0`);
   log('RUN', `Discovery session started for ${seeds.length} seed(s)`, 'ok');
+
+  const feedByUrl = new Map();
+  let validated = 0;
+  let total = 0;
+
   try {
-    const result = await apiPost('/api/discover', { seeds });
-    (result.logs || []).forEach((row) => log(row.code || 'DISCOVER', row.message || '', row.level === 'warn' ? 'warn' : row.level === 'error' ? 'err' : 'ok'));
-    state.session.feeds = (result.feeds || []).map(normalizeFeed).filter(Boolean);
+    const res = await fetch('/api/discover-stream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ seeds })
+    });
+    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (state.session.running) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      lines.forEach((line) => {
+        if (!line.trim()) return;
+        let event;
+        try { event = JSON.parse(line); } catch { return; }
+
+        if (event.type === 'log') {
+          log(event.code || 'RUN', event.message || '', event.level === 'warn' ? 'warn' : event.level === 'error' ? 'err' : 'ok');
+        } else if (event.type === 'feed' && event.feed) {
+          const normalized = normalizeFeed(event.feed);
+          if (!normalized) return;
+          if (!feedByUrl.has(normalized.url)) {
+            feedByUrl.set(normalized.url, normalized);
+            state.session.feeds.push(normalized);
+            if (!state.session.selectedFeedId) state.session.selectedFeedId = normalized.id;
+            rebuildReaderData();
+            renderFeedList();
+            renderDiscoverInspector();
+            updateDiscoverMetrics();
+            renderPackList();
+            renderHeadlineList();
+            renderStoryInspector();
+          }
+        } else if (event.type === 'progress') {
+          if (event.stage === 'scanning-seed') {
+            setDiscoverStatus('Scanning seed page', `${event.seed || ''}`);
+          } else if (event.stage === 'candidates-recovered') {
+            const detected = Number(event.detected || 0);
+            setDiscoverStatus(`Recovered ${detected} candidates`, `Feeds ${state.session.feeds.length}`);
+          } else if (event.stage === 'validating') {
+            validated = Number(event.validated || validated);
+            total = Number(event.total || total || validated);
+            setDiscoverStatus(`Validating ${validated}/${Math.max(total, validated)}`, `${state.session.feeds.length} real feeds found`);
+          }
+        } else if (event.type === 'error') {
+          throw new Error(event.error || 'discover-stream-failed');
+        }
+      });
+    }
   } catch (err) {
     log('ERROR', `Discovery failed ${String(err?.message || err)}`, 'err');
   }
+
   state.session.running = false;
   if (!state.session.feeds.length) {
     log('DONE', 'No valid feed records found', 'warn');
     setDiscoverStatus('Complete', '0 feeds discovered');
   } else {
+    state.session.feeds.sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0) || a.title.localeCompare(b.title));
     log('DONE', `${state.session.feeds.length} valid feeds discovered`, 'ok');
     setDiscoverStatus('Complete', `${state.session.feeds.length} feeds discovered`);
   }
-  if (!state.session.selectedFeedId && state.session.feeds[0]) state.session.selectedFeedId = state.session.feeds[0].id;
   rebuildReaderData();
   renderFeedList();
   renderDiscoverInspector();
@@ -588,7 +650,7 @@ function init() {
   bindEvents();
   clearSession();
   setMode('discover');
-  log('RUNTIME', 'Discovery transport: local backend /api/discover', 'ok');
+  log('RUNTIME', 'Discovery transport: local backend /api/discover-stream', 'ok');
 }
 
 init();
