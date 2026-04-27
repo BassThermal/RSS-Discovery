@@ -64,7 +64,7 @@ body {
 
 .app-sidebar {
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto 1fr;
   gap: 8px;
   background: var(--panel-2);
   padding: 8px;
@@ -73,11 +73,12 @@ body {
 
 .sidebar-panel { padding: 8px; background: transparent; }
 .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); font-weight: 700; }
-.brand-title { font-size: 20px; font-weight: 800; line-height: 1; margin: 2px 0 4px; }
+.brand-title { font-size: 18px; font-weight: 800; line-height: 1; margin: 0; }
 .tiny { font-size: 11px; color: var(--text-2); }
 .mono { font-family: var(--font-mono); }
 .quiet { color: var(--muted); }
 
+.sidebar-identity { display: grid; gap: 7px; }
 .nav-list { display: grid; gap: 6px; }
 .nav-btn {
   border: 1px solid var(--border);
@@ -102,6 +103,16 @@ body {
 .mode-panel { display: none; gap: 8px; overflow: auto; padding-right: 2px; }
 .mode-panel.active { display: grid; }
 .label { font-size: 11px; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+.field-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .045em; font-weight: 700; margin-bottom: 4px; }
+.control-field { display: grid; gap: 0; }
+.reader-scope {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-color: transparent;
+  padding: 2px 2px 0;
+}
+.scope-dot { color: var(--muted); }
 
 input, select, textarea, button { font: inherit; color: inherit; }
 input, select, textarea {
@@ -159,6 +170,30 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .workspace.active { display: grid; }
 .discover-layout { grid-template-columns: 1.1fr 1.2fr 320px; }
 .reader-layout { grid-template-columns: 280px 1fr 330px; }
+
+body.reader-active .app-shell { grid-template-columns: 252px 1fr; }
+body.reader-active .app-sidebar { gap: 6px; padding: 6px; }
+body.reader-active .sidebar-panel { padding: 6px; }
+body.reader-active .sidebar-identity { gap: 5px; }
+body.reader-active .brand-title { font-size: 14px; font-weight: 700; letter-spacing: .01em; }
+body.reader-active .nav-list { gap: 4px; }
+body.reader-active .nav-btn { height: var(--h28); padding: 0 8px; }
+body.reader-active .mode-panel[data-panel="reader"] { gap: 6px; padding-right: 0; }
+body.reader-active .mode-panel[data-panel="reader"] .sidebar-panel {
+  border-color: transparent;
+  background: transparent;
+  padding: 0;
+}
+body.reader-active .reader-controls {
+  border: 1px solid var(--border);
+  border-radius: var(--r1);
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  padding: 8px;
+  gap: 7px;
+}
+body.reader-active .reader-controls .label { margin-bottom: 1px; }
+body.reader-active .reader-controls input,
+body.reader-active .reader-controls select { min-height: var(--h28); }
 
 .pane { min-height: 0; display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
 .pane.no-toolbar { grid-template-rows: auto 1fr; }
