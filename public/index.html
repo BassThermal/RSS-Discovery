@@ -9,13 +9,12 @@
 <body>
   <div class="app-shell">
     <aside class="app-sidebar">
-      <div class="sidebar-panel">
+      <div class="sidebar-panel sidebar-identity">
         <div class="brand-title">RSS Discovery</div>
-      </div>
-
-      <div class="sidebar-panel nav-list">
-        <button class="nav-btn active" data-mode="discover">Discover</button>
-        <button class="nav-btn" data-mode="reader">Reader</button>
+        <div class="nav-list">
+          <button class="nav-btn active" data-mode="discover">Discover</button>
+          <button class="nav-btn" data-mode="reader">Reader</button>
+        </div>
       </div>
 
       <div class="mode-panel active" data-panel="discover">
@@ -55,15 +54,18 @@
       </div>
 
       <div class="mode-panel" data-panel="reader">
-        <div class="sidebar-panel stack">
-          <div class="label">Sources</div>
-          <input id="readerSourceSearch" placeholder="Search sources" />
-        </div>
-
-        <div class="sidebar-panel stack">
-          <div class="label">Headlines</div>
-          <div class="row2">
+        <div class="sidebar-panel reader-controls stack">
+          <div class="label">Reader Controls</div>
+          <div class="control-field">
+            <div class="field-label">Source filter</div>
+            <input id="readerSourceSearch" placeholder="Search sources" />
+          </div>
+          <div class="control-field">
+            <div class="field-label">Headline filter</div>
             <input id="headlineSearch" placeholder="Search headline/excerpt" />
+          </div>
+          <div class="control-field">
+            <div class="field-label">Range</div>
             <select id="rangeSelect">
               <option value="6">Last 6h</option>
               <option value="24" selected>Last 24h</option>
@@ -72,10 +74,12 @@
             </select>
           </div>
         </div>
-      </div>
 
-      <div class="sidebar-panel tiny">
-        Local discovery workspace
+        <div class="sidebar-panel reader-scope tiny mono" id="readerScopeSummary">
+          <span id="readerScopeSources">0 sources</span>
+          <span class="scope-dot">·</span>
+          <span id="readerScopeStories">0 visible stories</span>
+        </div>
       </div>
     </aside>
 

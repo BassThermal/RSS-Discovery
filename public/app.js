@@ -60,6 +60,8 @@ const els = {
   readerSourceSearch: document.getElementById('readerSourceSearch'),
   headlineSearch: document.getElementById('headlineSearch'),
   rangeSelect: document.getElementById('rangeSelect'),
+  readerScopeSources: document.getElementById('readerScopeSources'),
+  readerScopeStories: document.getElementById('readerScopeStories'),
   headlineList: document.getElementById('headlineList'),
   headlineCount: document.getElementById('headlineCount'),
   headlineSummary: document.getElementById('headlineSummary'),
@@ -389,13 +391,23 @@ function getFilteredHeadlines() {
     .filter((st) => !query || `${st.title} ${st.excerpt} ${st.url}`.toLowerCase().includes(query));
 }
 
+function updateReaderScopeSummary() {
+  const activeSources = state.session.feeds.filter((f) => f.state === 'kept').length;
+  const visibleStories = getFilteredHeadlines().length;
+  els.readerScopeSources.textContent = `${activeSources} active ${activeSources === 1 ? 'source' : 'sources'}`;
+  els.readerScopeStories.textContent = `${visibleStories} visible ${visibleStories === 1 ? 'story' : 'stories'}`;
+}
+
 function renderPackList() {
   const sources = getFilteredSources();
   const kept = state.session.feeds.filter((f) => f.state === 'kept').length;
   els.packList.innerHTML = '';
   els.packCount.textContent = `${kept} active sources`;
   els.packSummary.textContent = kept ? `Kept feeds ${kept}` : 'No active Reader feeds yet. Keep feeds in Discover.';
-  if (!sources.length) return (els.packList.innerHTML = '<div class="hint">No source rows match search.</div>');
+  if (!sources.length) {
+    updateReaderScopeSummary();
+    return (els.packList.innerHTML = '<div class="hint">No source rows match search.</div>');
+  }
   sources.forEach((src) => {
     const row = document.createElement('div');
     row.className = `pack-row ${state.reader.selectedSourceId === src.id ? 'selected' : ''}`;
@@ -410,6 +422,7 @@ function renderPackList() {
     });
     els.packList.appendChild(row);
   });
+  updateReaderScopeSummary();
 }
 
 function renderHeadlineList() {
@@ -417,9 +430,18 @@ function renderHeadlineList() {
   els.headlineList.innerHTML = '';
   els.headlineCount.textContent = `${rows.length} shown`;
   els.headlineSummary.textContent = `Range ${state.reader.rangeHours}h · Source ${state.reader.selectedSourceId} · Loaded ${state.reader.stories.length}`;
-  if (!state.session.feeds.some((f) => f.state === 'kept')) return (els.headlineList.innerHTML = '<div class="hint">No active Reader feeds yet. Keep feeds in Discover.</div>');
-  if (!state.reader.stories.length) return (els.headlineList.innerHTML = '<div class="hint">No readable items were loaded from active feeds.</div>');
-  if (!rows.length) return (els.headlineList.innerHTML = '<div class="hint">No stories match source/search/range filters.</div>');
+  if (!state.session.feeds.some((f) => f.state === 'kept')) {
+    updateReaderScopeSummary();
+    return (els.headlineList.innerHTML = '<div class="hint">No active Reader feeds yet. Keep feeds in Discover.</div>');
+  }
+  if (!state.reader.stories.length) {
+    updateReaderScopeSummary();
+    return (els.headlineList.innerHTML = '<div class="hint">No readable items were loaded from active feeds.</div>');
+  }
+  if (!rows.length) {
+    updateReaderScopeSummary();
+    return (els.headlineList.innerHTML = '<div class="hint">No stories match source/search/range filters.</div>');
+  }
   rows.forEach((st) => {
     const row = document.createElement('div');
     row.className = `headline-row ${state.reader.selectedHeadlineId === st.id ? 'selected' : ''}`;
@@ -440,6 +462,7 @@ function renderHeadlineList() {
     row.querySelector('.headline-link').addEventListener('click', (e) => e.stopPropagation());
     els.headlineList.appendChild(row);
   });
+  updateReaderScopeSummary();
 }
 
 function renderStoryInspector() {
@@ -481,6 +504,7 @@ function refreshReaderStatus() {
   els.toolbarSecondary.textContent = `${visible} visible stories`;
   els.statusLeft.textContent = 'READER · Active';
   els.statusRight.textContent = `Loaded ${state.reader.stories.length} · Range ${state.reader.rangeHours}h`;
+  updateReaderScopeSummary();
 }
 
 async function refreshReaderItemsFromBackend() {
