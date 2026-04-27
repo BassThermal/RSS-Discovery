@@ -41,6 +41,8 @@ const els = {
   clearBtn: document.getElementById('clearBtn'),
   keepSelectedBtn: document.getElementById('keepSelectedBtn'),
   excludeSelectedBtn: document.getElementById('excludeSelectedBtn'),
+  selectVisibleBtn: document.getElementById('selectVisibleBtn'),
+  clearVisibleBtn: document.getElementById('clearVisibleBtn'),
   openReaderBtn: document.getElementById('openReaderBtn'),
   backDiscoverBtn: document.getElementById('backDiscoverBtn'),
   metricDiscovered: document.getElementById('metricDiscovered'),
@@ -69,6 +71,16 @@ const parseDateMaybe = (value) => {
   const ts = Date.parse(value);
   return Number.isFinite(ts) ? ts : null;
 };
+
+const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+
+function normalizePublishedAt(value) {
+  const parsed = typeof value === 'number' ? value : parseDateMaybe(value);
+  if (!Number.isFinite(parsed)) return null;
+  const now = Date.now();
+  if (parsed > now + FUTURE_TOLERANCE_MS) return null;
+  return Math.min(parsed, now);
+}
 
 function normalizeUrl(input, base) {
   if (!input) return null;
@@ -106,13 +118,22 @@ function parseSeeds(raw) {
 }
 
 function formatAge(ts) {
-  if (!ts) return 'unknown';
+  if (!ts) return 'Unknown time';
   const delta = Date.now() - ts;
-  if (delta < 0) return 'future';
+  if (delta <= 0) return 'Just now';
   const h = Math.floor(delta / 3600000);
   if (h < 1) return `${Math.max(1, Math.floor(delta / 60000))}m ago`;
   if (h < 48) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+function formatStoryTime(ts) {
+  if (!ts) return 'Unknown time';
+  try {
+    return new Date(ts).toLocaleString();
+  } catch {
+    return 'Unknown time';
+  }
 }
 
 function iconMarkup(domain, label, iconUrl = '') {
@@ -170,12 +191,12 @@ function normalizeFeed(raw) {
       title: it.title || 'Untitled item',
       url: normalizeUrl(it.url || '', url) || url,
       excerpt: String(it.excerpt || '').slice(0, 260),
-      publishedAt: typeof it.publishedAt === 'number' ? it.publishedAt : parseDateMaybe(it.publishedAt),
+      publishedAt: normalizePublishedAt(it.publishedAt),
       author: it.author || ''
     }))
     : [];
   const latest = items[0] || null;
-  const latestAt = latest?.publishedAt || parseDateMaybe(raw?.latestAt);
+  const latestAt = latest?.publishedAt || normalizePublishedAt(raw?.latestAt);
 
   return {
     id: raw?.id || `f-${btoa(url).replace(/=+$/g, '').slice(-12)}`,
@@ -192,7 +213,7 @@ function normalizeFeed(raw) {
     latestTitle: raw?.latestTitle || latest?.title || 'No items detected',
     latestUrl: normalizeUrl(raw?.latestUrl || latest?.url || '', url) || '',
     latestAt,
-    latestAge: latestAt ? formatAge(latestAt) : 'unknown',
+    latestAge: latestAt ? formatAge(latestAt) : 'Unknown time',
     items
   };
 }
@@ -225,7 +246,7 @@ function deriveStoriesFromFeeds(feeds) {
         feedUrl: feed.url,
         title: item.title || 'Untitled item',
         excerpt: item.excerpt || '',
-        publishedAt: item.publishedAt || 0,
+        publishedAt: normalizePublishedAt(item.publishedAt),
         url: item.url || feed.url,
         author: item.author || ''
       });
@@ -291,7 +312,7 @@ function renderFeedList() {
         <div class="sub url">${escapeHtml(feed.url)}</div>
       </div>
       <button class="row-action" data-act="toggle">${feed.state === 'excluded' ? '↺' : '×'}</button>
-      <div class="preview"><div class="p-title">${escapeHtml(feed.title)}</div><div class="p-line">Source: ${escapeHtml(feed.sourceDomain)}</div><div class="p-line">Type: ${escapeHtml(feed.format.toUpperCase())} · ${feed.state}</div><div class="p-line">Latest: ${escapeHtml(feed.latestTitle || 'n/a')}</div><div class="p-line">Age: ${escapeHtml(feed.latestAge || 'unknown')}</div></div>`;
+      <div class="preview"><div class="p-title">${escapeHtml(feed.title)}</div><div class="p-line">Source: ${escapeHtml(feed.sourceDomain)}</div><div class="p-line">Type: ${escapeHtml(feed.format.toUpperCase())} · ${feed.state}</div><div class="p-line">Latest: ${escapeHtml(feed.latestTitle || 'n/a')}</div><div class="p-line">Age: ${escapeHtml(feed.latestAge || 'Unknown time')}</div></div>`;
     row.addEventListener('click', (e) => {
       if (e.target.matches('input,button')) return;
       state.session.selectedFeedId = feed.id;
@@ -308,6 +329,15 @@ function renderFeedList() {
     });
     els.feedList.appendChild(row);
   });
+}
+
+function setVisibleSelection(checked) {
+  const visible = getFilteredFeeds();
+  visible.forEach((feed) => {
+    if (checked) state.session.selectedFeedIds.add(feed.id);
+    else state.session.selectedFeedIds.delete(feed.id);
+  });
+  renderFeedList();
 }
 
 function setFeedState(id, nextState) {
@@ -341,7 +371,7 @@ function updateDiscoverMetrics() {
 function renderDiscoverInspector() {
   const feed = state.session.feeds.find((f) => f.id === state.session.selectedFeedId);
   if (!feed) return (els.discoverInspector.innerHTML = '<div class="hint">Select a discovered feed to inspect details.</div>');
-  els.discoverInspector.innerHTML = `<div class="block"><div class="k">Source</div><div class="v">${escapeHtml(feed.sourceDomain)}</div><div class="s mono">${escapeHtml(feed.sourceSeed)}</div></div><div class="block"><div class="k">Feed</div><div class="v">${escapeHtml(feed.title)}</div><div class="s mono">${escapeHtml(feed.url)}</div><div class="s">Format ${escapeHtml(feed.format.toUpperCase())} · State ${feed.state}</div></div><div class="block"><div class="k">Latest item</div><div class="v">${escapeHtml(feed.latestTitle || 'No item title')}</div><div class="s mono">${escapeHtml(feed.latestUrl || 'No article URL')}</div><div class="s">Published ${escapeHtml(feed.latestAge || 'unknown')}</div></div><div class="row2"><button class="btn micro" id="insKeep">Keep</button><button class="btn micro danger" id="insExclude">Exclude</button></div><div class="row2"><button class="btn micro" id="insOpenFeed">Open feed</button><button class="btn micro" id="insOpenArticle" ${feed.latestUrl ? '' : 'disabled'}>Open latest</button></div>`;
+  els.discoverInspector.innerHTML = `<div class="block"><div class="k">Source</div><div class="v">${escapeHtml(feed.sourceDomain)}</div><div class="s mono">${escapeHtml(feed.sourceSeed)}</div></div><div class="block"><div class="k">Feed</div><div class="v">${escapeHtml(feed.title)}</div><div class="s mono">${escapeHtml(feed.url)}</div><div class="s">Format ${escapeHtml(feed.format.toUpperCase())} · State ${feed.state}</div></div><div class="block"><div class="k">Latest item</div><div class="v">${escapeHtml(feed.latestTitle || 'No item title')}</div><div class="s mono">${escapeHtml(feed.latestUrl || 'No article URL')}</div><div class="s">Published ${escapeHtml(feed.latestAge || 'Unknown time')}</div></div><div class="row2"><button class="btn micro" id="insKeep">Keep</button><button class="btn micro danger" id="insExclude">Exclude</button></div><div class="row2"><button class="btn micro" id="insOpenFeed">Open feed</button><button class="btn micro" id="insOpenArticle" ${feed.latestUrl ? '' : 'disabled'}>Open latest</button></div>`;
   document.getElementById('insKeep').addEventListener('click', () => setFeedState(feed.id, 'kept'));
   document.getElementById('insExclude').addEventListener('click', () => setFeedState(feed.id, 'excluded'));
   document.getElementById('insOpenFeed').addEventListener('click', () => window.open(feed.url, '_blank', 'noopener'));
@@ -393,13 +423,21 @@ function renderHeadlineList() {
   rows.forEach((st) => {
     const row = document.createElement('div');
     row.className = `headline-row ${state.reader.selectedHeadlineId === st.id ? 'selected' : ''}`;
-    row.innerHTML = `<div class="headline-main"><div class="headline-meta"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><span class="mono quiet story-time">${st.publishedAt ? escapeHtml(new Date(st.publishedAt).toLocaleString()) : 'No date'}</span></div><div class="title clamp-2" dir="auto">${escapeHtml(st.title)}</div><div class="sub clamp-1" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><span class="badge age">${st.publishedAt ? formatAge(st.publishedAt) : 'n/a'}</span><div class="preview"><div class="p-title">${escapeHtml(st.title)}</div><div class="p-line">Source: ${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="p-line">Published: ${st.publishedAt ? escapeHtml(new Date(st.publishedAt).toLocaleString()) : 'No date'}</div><div class="p-line">${escapeHtml((st.excerpt || 'No excerpt').slice(0, 120))}</div><div class="p-line mono">${escapeHtml(st.url)}</div></div>`;
+    row.tabIndex = 0;
+    row.innerHTML = `<div class="headline-main"><div class="headline-meta"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><span class="mono quiet story-time">${escapeHtml(formatStoryTime(st.publishedAt))}</span></div><a class="title clamp-2 headline-link" dir="auto" href="${escapeHtml(st.url)}" target="_blank" rel="noopener" title="Open article">${escapeHtml(st.title)}</a><div class="sub clamp-1" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><span class="badge age">${formatAge(st.publishedAt)}</span><div class="preview"><div class="p-title">${escapeHtml(st.title)}</div><div class="p-line">Source: ${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="p-line">Published: ${escapeHtml(formatStoryTime(st.publishedAt))}</div><div class="p-line">${escapeHtml((st.excerpt || 'No excerpt').slice(0, 120))}</div><div class="p-line mono">${escapeHtml(st.url)}</div></div>`;
     row.addEventListener('click', () => {
       state.reader.selectedHeadlineId = st.id;
       renderHeadlineList();
       renderStoryInspector();
       refreshReaderStatus();
     });
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && state.reader.selectedHeadlineId === st.id) {
+        e.preventDefault();
+        window.open(st.url, '_blank', 'noopener');
+      }
+    });
+    row.querySelector('.headline-link').addEventListener('click', (e) => e.stopPropagation());
     els.headlineList.appendChild(row);
   });
 }
@@ -407,7 +445,7 @@ function renderHeadlineList() {
 function renderStoryInspector() {
   const st = state.reader.stories.find((s) => s.id === state.reader.selectedHeadlineId);
   if (!st) return (els.storyInspector.innerHTML = '<div class="hint">Select a headline row to inspect story details.</div>');
-  els.storyInspector.innerHTML = `<div class="block"><div class="k">Story</div><div class="v">${escapeHtml(st.title)}</div><div class="s mono">${escapeHtml(st.url)}</div></div><div class="block"><div class="k">Source</div><div class="s">${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="s mono">${escapeHtml(st.feedUrl)}</div><div class="s">Published ${st.publishedAt ? escapeHtml(new Date(st.publishedAt).toLocaleString()) : 'unknown'}</div></div><div class="block"><div class="k">Excerpt</div><div class="s">${escapeHtml(st.excerpt || 'No excerpt available.')}</div></div><div class="row2"><button class="btn micro" id="openStoryBtn">Open article</button><button class="btn micro" id="openStoryFeedBtn">Open source feed</button></div>`;
+  els.storyInspector.innerHTML = `<div class="block"><div class="k">Story</div><div class="v">${escapeHtml(st.title)}</div><div class="s mono">${escapeHtml(st.url)}</div></div><div class="block"><div class="k">Source</div><div class="s">${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="s mono">${escapeHtml(st.feedUrl)}</div><div class="s">Published ${escapeHtml(formatStoryTime(st.publishedAt))}</div></div><div class="block"><div class="k">Excerpt</div><div class="s">${escapeHtml(st.excerpt || 'No excerpt available.')}</div></div><div class="row2"><button class="btn micro" id="openStoryBtn">Open article</button><button class="btn micro" id="openStoryFeedBtn">Open source feed</button></div>`;
   document.getElementById('openStoryBtn').addEventListener('click', () => window.open(st.url, '_blank', 'noopener'));
   document.getElementById('openStoryFeedBtn').addEventListener('click', () => window.open(st.feedUrl, '_blank', 'noopener'));
 }
@@ -455,7 +493,7 @@ async function refreshReaderItemsFromBackend() {
   (payload.logs || []).forEach((row) => log(row.code || 'READER', row.message || '', row.level === 'warn' ? 'warn' : row.level === 'error' ? 'err' : 'ok'));
   const itemsByFeed = new Map();
   (payload.items || []).forEach((item) => {
-    const next = { ...item, sourceIcon: item.sourceIcon || toFaviconUrl(item.sourceDomain), publishedAt: typeof item.publishedAt === 'number' ? item.publishedAt : parseDateMaybe(item.publishedAt) || 0 };
+    const next = { ...item, sourceIcon: item.sourceIcon || toFaviconUrl(item.sourceDomain), publishedAt: normalizePublishedAt(item.publishedAt) };
     if (!itemsByFeed.has(next.sourceId)) itemsByFeed.set(next.sourceId, []);
     itemsByFeed.get(next.sourceId).push(next);
   });
@@ -469,7 +507,7 @@ async function refreshReaderItemsFromBackend() {
       feed.latestTitle = first.title;
       feed.latestUrl = first.url;
       feed.latestAt = first.publishedAt;
-      feed.latestAge = first.publishedAt ? formatAge(first.publishedAt) : 'unknown';
+      feed.latestAge = first.publishedAt ? formatAge(first.publishedAt) : 'Unknown time';
     }
   });
   rebuildReaderData();
@@ -576,6 +614,7 @@ async function runDiscoverySession(seeds) {
 function setMode(mode) {
   state.mode = mode;
   const isDiscover = mode === 'discover';
+  document.body.classList.toggle('reader-active', !isDiscover);
   els.navButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.mode === mode));
   els.modePanels.forEach((panel) => panel.classList.toggle('active', panel.dataset.panel === mode));
   els.discoverPane.classList.toggle('active', isDiscover);
@@ -625,6 +664,8 @@ function bindEvents() {
     renderFeedList();
     renderDiscoverInspector();
   }));
+  els.selectVisibleBtn.addEventListener('click', () => setVisibleSelection(true));
+  els.clearVisibleBtn.addEventListener('click', () => setVisibleSelection(false));
   els.readerSourceSearch.addEventListener('input', () => {
     state.reader.sourceSearch = els.readerSourceSearch.value.trim();
     renderPackList();
@@ -651,6 +692,16 @@ function init() {
   clearSession();
   setMode('discover');
   log('RUNTIME', 'Discovery transport: local backend /api/discover-stream', 'ok');
+
+  document.addEventListener('keydown', (e) => {
+    if (state.mode !== 'reader' || e.key !== 'Enter') return;
+    const st = state.reader.stories.find((s) => s.id === state.reader.selectedHeadlineId);
+    if (!st?.url) return;
+    const target = e.target;
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+    e.preventDefault();
+    window.open(st.url, '_blank', 'noopener');
+  });
 }
 
 init();

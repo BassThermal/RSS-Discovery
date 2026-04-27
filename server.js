@@ -89,10 +89,20 @@ function parseDateMaybe(value) {
   return Number.isFinite(ts) ? ts : null;
 }
 
+const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
+
+function normalizePublishedAt(value) {
+  const parsed = typeof value === 'number' ? value : parseDateMaybe(value);
+  if (!Number.isFinite(parsed)) return null;
+  const now = Date.now();
+  if (parsed > now + FUTURE_TOLERANCE_MS) return null;
+  return Math.min(parsed, now);
+}
+
 function formatAge(ts) {
-  if (!ts) return 'unknown';
+  if (!ts) return 'Unknown time';
   const delta = Date.now() - ts;
-  if (delta < 0) return 'future';
+  if (delta <= 0) return 'Just now';
   const h = Math.floor(delta / 3600000);
   if (h < 1) return `${Math.max(1, Math.floor(delta / 60000))}m ago`;
   if (h < 48) return `${h}h ago`;
@@ -268,7 +278,7 @@ function extractCandidates(html, seedUrl) {
 
 function normalizeParsedItem(item, feedUrl, idx) {
   const url = normalizeUrl(item.link || item.guid || item.id || '', feedUrl) || feedUrl;
-  const publishedAt = parseDateMaybe(item.isoDate || item.pubDate || item.published || item.updated);
+  const publishedAt = normalizePublishedAt(item.isoDate || item.pubDate || item.published || item.updated);
 
   return {
     id: item.guid || item.id || `${feedUrl}#${idx}`,
@@ -327,7 +337,7 @@ function toFeedRecord(seedUrl, feedUrl, parsed, meta = {}) {
     latestTitle: latest?.title || 'No items detected',
     latestUrl: latest?.url || '',
     latestAt,
-    latestAge: latestAt ? formatAge(latestAt) : 'unknown',
+    latestAge: latestAt ? formatAge(latestAt) : 'Unknown time',
     items
   };
 }
