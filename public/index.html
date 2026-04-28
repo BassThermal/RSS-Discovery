@@ -13,7 +13,7 @@
         <div class="brand-title">RSS Discovery</div>
         <div class="nav-list">
           <button class="nav-btn active" data-mode="discover">Discover</button>
-          <button class="nav-btn" data-mode="reader">Preview latest articles</button>
+          <button class="nav-btn" data-mode="reader">Preview</button>
         </div>
       </div>
 
@@ -99,15 +99,6 @@
           <span class="mono" id="toolbarSecondary">Session ready</span>
         </div>
         <div class="toolbar-right" id="discoverActions">
-          <div class="export-group">
-            <button class="btn micro" id="exportBtn">Export included</button>
-            <div class="export-menu" id="exportMenu">
-              <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
-              <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
-              <button class="btn micro ghost" id="exportCsvBtn">CSV</button>
-              <button class="btn micro ghost" id="exportJsonBtn">JSON</button>
-            </div>
-          </div>
           <button class="btn micro" id="openReaderBtn">Preview latest articles</button>
         </div>
         <div class="toolbar-right hidden" id="readerActions">
@@ -119,21 +110,30 @@
         <section class="pane">
           <div class="pane-head"><div class="pane-title">Results</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
           <div class="pane-toolbar">
-            <div class="toolbar-inline wrap">
-              <input id="discoverSearch" placeholder="Search domain/title/feed URL" />
+            <div class="toolbar-inline discover-toolbar">
+              <input id="discoverSearch" placeholder="Search title, domain, or feed URL" />
               <select id="discoverFilter">
                 <option value="all">All</option>
                 <option value="included">Included</option>
                 <option value="ignored">Ignored</option>
                 <option value="problem">Problem</option>
               </select>
-              <button class="btn micro ghost" id="selectVisibleBtn">Select all shown</button>
-              <button class="btn micro ghost" id="clearVisibleBtn">Deselect shown</button>
+              <div class="export-group">
+                <button class="btn micro" id="exportBtn">Export included ▾</button>
+                <div class="export-menu" id="exportMenu">
+                  <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
+                  <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
+                  <button class="btn micro ghost" id="exportCsvBtn">CSV</button>
+                  <button class="btn micro ghost" id="exportJsonBtn">JSON</button>
+                </div>
+              </div>
             </div>
           </div>
           <div class="pane-toolbar selection-bar" id="bulkActionBar">
-            <div class="toolbar-inline">
+            <div class="toolbar-inline discover-selection-toolbar">
               <div class="tiny" id="discoverSummary">0 total</div>
+              <button class="btn micro ghost" id="selectVisibleBtn">Select shown</button>
+              <button class="btn micro ghost" id="clearVisibleBtn">Clear selection</button>
               <button class="btn micro" id="includeSelectedBtn">Include selected</button>
               <button class="btn micro danger" id="ignoreSelectedBtn">Ignore selected</button>
             </div>
@@ -147,7 +147,7 @@
         </aside>
 
         <section class="pane no-toolbar log-pane">
-          <details class="log-details" open>
+          <details class="log-details">
             <summary class="pane-head"><span class="pane-title">Scan log</span><span class="pane-meta mono" id="logCount">0 actions</span></summary>
             <div class="pane-body terminal" id="terminal"></div>
           </details>

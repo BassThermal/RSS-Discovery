@@ -125,6 +125,17 @@ const escapeHtml = (value) => String(value || '')
   .replaceAll('"', '&quot;')
   .replaceAll("'", '&#039;');
 
+const decodeHtmlEntities = (() => {
+  const textarea = document.createElement('textarea');
+  return (value) => {
+    if (value === null || value === undefined) return '';
+    const raw = String(value);
+    if (!/[&][#a-zA-Z0-9]+;/.test(raw)) return raw;
+    textarea.innerHTML = raw;
+    return textarea.value;
+  };
+})();
+
 const toFaviconUrl = (domain) => `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`;
 
 function parseSeeds(raw) {
@@ -208,9 +219,9 @@ function normalizeFeed(raw) {
   const items = Array.isArray(raw?.items)
     ? raw.items.map((it, idx) => ({
       id: it.id || `${url}#${idx}`,
-      title: it.title || 'Untitled item',
+      title: decodeHtmlEntities(it.title || 'Untitled item'),
       url: normalizeUrl(it.url || '', url) || url,
-      excerpt: String(it.excerpt || '').slice(0, 260),
+      excerpt: decodeHtmlEntities(String(it.excerpt || '').slice(0, 260)),
       publishedAt: normalizePublishedAt(it.publishedAt),
       author: it.author || ''
     }))
@@ -224,13 +235,13 @@ function normalizeFeed(raw) {
     sourceDomain,
     sourceHome: normalizeUrl(raw?.sourceHome || '', url) || '',
     sourceIcon: raw?.sourceIcon || toFaviconUrl(sourceDomain),
-    title: raw?.title || sourceDomain || getDomain(url),
+    title: decodeHtmlEntities(raw?.title || sourceDomain || getDomain(url)),
     url,
     wrappedUrl: normalizeUrl(raw?.wrappedUrl || '', url) || '',
     discoveredVia: raw?.discoveredVia || 'scan',
     format: (raw?.format || 'rss').toLowerCase(),
     state: toUiState(raw?.state),
-    latestTitle: raw?.latestTitle || latest?.title || 'No items detected',
+    latestTitle: decodeHtmlEntities(raw?.latestTitle || latest?.title || 'No items detected'),
     latestUrl: normalizeUrl(raw?.latestUrl || latest?.url || '', url) || '',
     latestAt,
     latestAge: latestAt ? formatAge(latestAt) : 'Unknown time',
@@ -278,8 +289,8 @@ function deriveStoriesFromFeeds(feeds) {
         sourceDomain: feed.sourceDomain || getDomain(feed.url),
         sourceIcon: feed.sourceIcon || toFaviconUrl(feed.sourceDomain || getDomain(feed.url)),
         feedUrl: feed.url,
-        title: item.title || 'Untitled item',
-        excerpt: item.excerpt || '',
+        title: decodeHtmlEntities(item.title || 'Untitled item'),
+        excerpt: decodeHtmlEntities(item.excerpt || ''),
         publishedAt: normalizePublishedAt(item.publishedAt),
         url: item.url || feed.url,
         author: item.author || ''
@@ -341,18 +352,30 @@ function renderFeedList() {
   if (!filtered.length) return (els.feedList.innerHTML = '<div class="hint">No feed records for this filter.</div>');
   filtered.forEach((feed) => {
     const row = document.createElement('div');
-    row.className = `feed-row ${feed.state === 'ignored' ? 'excluded' : ''} ${feed.state === 'included' ? 'kept' : ''} ${feed.id === state.session.selectedFeedId ? 'selected' : ''}`;
+    row.className = `feed-row ${feed.state === 'ignored' ? 'excluded' : ''} ${feed.id === state.session.selectedFeedId ? 'focused' : ''}`;
+    const latestText = feed.latestTitle || 'No items detected';
     row.innerHTML = `
-      <input type="checkbox" data-id="${feed.id}" ${state.session.selectedFeedIds.has(feed.id) ? 'checked' : ''} />
+      <input class="feed-select" aria-label="Select ${escapeHtml(feed.title)}" type="checkbox" data-id="${feed.id}" ${state.session.selectedFeedIds.has(feed.id) ? 'checked' : ''} />
       ${iconMarkup(feed.sourceDomain, feed.title, feed.sourceIcon)}
       <div class="feed-main">
-        <div class="topline"><span class="domain">${escapeHtml(feed.sourceDomain)}</span><span class="badge type">${escapeHtml(feed.format)}</span><span class="badge state-${feed.state}">${feed.state}</span></div>
         <div class="title clamp-1">${escapeHtml(feed.title)}</div>
-        <div class="sub url">${escapeHtml(feed.url)}</div>
+        <div class="feed-meta-line">
+          <span class="domain">${escapeHtml(feed.sourceDomain || 'Unknown domain')}</span>
+          <span class="sub url">${escapeHtml(feed.url)}</span>
+        </div>
+        <div class="feed-tertiary">
+          <span class="clamp-1">${escapeHtml(latestText)}</span>
+          <span class="badge age">${escapeHtml(feed.latestAge || 'Unknown time')}</span>
+          <span class="badge state-${feed.state}">${feed.state === 'ignored' ? 'Ignored' : 'Included'}</span>
+          <span class="badge type">${escapeHtml(feed.format.toUpperCase())}</span>
+        </div>
       </div>
-      <button class="row-action" data-act="toggle">${feed.state === 'ignored' ? '↺' : '×'}</button>
-      <button class="row-action" data-act="copy">⎘</button>
-      <div class="preview"><div class="p-title">${escapeHtml(feed.title)}</div><div class="p-line">Source: ${escapeHtml(feed.sourceDomain)}</div><div class="p-line">Type: ${escapeHtml(feed.format.toUpperCase())} · ${feed.state}</div><div class="p-line">Latest: ${escapeHtml(feed.latestTitle || 'n/a')}</div><div class="p-line">Age: ${escapeHtml(feed.latestAge || 'Unknown time')}</div></div>`;
+      <div class="row-actions">
+        <button class="row-action" data-act="copy" title="Copy feed URL">Copy URL</button>
+        <button class="row-action" data-act="open" title="Open feed in new tab">Open feed</button>
+        <button class="row-action" data-act="toggle" title="${feed.state === 'ignored' ? 'Restore feed' : 'Ignore feed'}">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
+      </div>
+    `;
     row.addEventListener('click', (e) => {
       if (e.target.matches('input,button')) return;
       state.session.selectedFeedId = feed.id;
@@ -371,6 +394,10 @@ function renderFeedList() {
     row.querySelector('[data-act="copy"]').addEventListener('click', async (e) => {
       e.stopPropagation();
       await copyText(feed.url, 'Copied 1 feed URL');
+    });
+    row.querySelector('[data-act="open"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.open(feed.url, '_blank', 'noopener');
     });
     els.feedList.appendChild(row);
   });
@@ -410,16 +437,31 @@ function updateDiscoverMetrics() {
   els.metricDiscovered.textContent = total;
   els.metricIncluded.textContent = included;
   els.metricIgnored.textContent = ignored;
-  els.discoverSummary.textContent = `${total} total · ${included} included · ${ignored} ignored${selected ? ` · ${selected} selected` : ''}`;
+  els.discoverSummary.textContent = `${included} included · ${ignored} ignored${selected ? ` · ${selected} selected` : ''}`;
   els.bulkActionBar.classList.toggle('hidden', selected === 0);
+  els.exportBtn.disabled = included === 0;
+  els.exportBtn.title = included === 0 ? 'No included feeds' : 'Export included feeds';
   if (state.mode === 'discover') els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${included}`;
+}
+
+function updateDiscoverLayout() {
+  const hasSelection = !!state.session.selectedFeedId;
+  const hasWideSpace = window.innerWidth >= 1500;
+  els.discoverPane.classList.toggle('has-inspector', hasSelection && hasWideSpace);
 }
 
 function renderDiscoverInspector() {
   const feed = state.session.feeds.find((f) => f.id === state.session.selectedFeedId);
-  if (!feed) return (els.discoverInspector.innerHTML = '<div class="hint">Select a feed to inspect details.</div>');
+  if (!feed) {
+    els.discoverInspector.innerHTML = '<div class="hint">Select a feed for details.</div>';
+    els.discoverInspector.closest('.discover-inspector-pane')?.classList.remove('has-content');
+    updateDiscoverLayout();
+    return;
+  }
   const lastUpdated = feed.latestAt ? new Date(feed.latestAt).toLocaleString() : 'Unknown';
   els.discoverInspector.innerHTML = `<div class="block"><div class="k">Feed title</div><div class="v">${escapeHtml(feed.title)}</div></div><div class="block"><div class="k">Domain</div><div class="s">${escapeHtml(feed.sourceDomain || 'Unknown')}</div><div class="k">Feed URL</div><div class="s mono">${escapeHtml(feed.url)}</div><div class="k">Site URL</div><div class="s mono">${escapeHtml(feed.sourceHome || feed.sourceSeed || 'Unknown')}</div></div><div class="block"><div class="k">Latest item</div><div class="v">${escapeHtml(feed.latestTitle || 'No item title')}</div><div class="s mono">${escapeHtml(feed.latestUrl || 'No article URL')}</div><div class="s">Last updated ${escapeHtml(lastUpdated)}</div></div><div class="block"><div class="k">Discovered via</div><div class="s">${escapeHtml(feed.discoveredVia || 'scan')}</div><div class="k">Format</div><div class="s">${escapeHtml(feed.format.toUpperCase())}</div></div><div class="row2"><button class="btn micro" id="insToggle">${feed.state === 'included' ? 'Ignore' : 'Include'}</button><button class="btn micro" id="insCopy">Copy URL</button></div><div class="row2"><button class="btn micro" id="insOpenFeed">Open feed</button><button class="btn micro" id="insOpenArticle" ${feed.latestUrl ? '' : 'disabled'}>Open latest</button></div>`;
+  els.discoverInspector.closest('.discover-inspector-pane')?.classList.add('has-content');
+  updateDiscoverLayout();
   document.getElementById('insToggle').addEventListener('click', () => setFeedState(feed.id, feed.state === 'included' ? 'ignored' : 'included'));
   document.getElementById('insCopy').addEventListener('click', () => copyText(feed.url, 'Copied 1 feed URL'));
   document.getElementById('insOpenFeed').addEventListener('click', () => window.open(feed.url, '_blank', 'noopener'));
@@ -558,7 +600,13 @@ async function refreshReaderItemsFromBackend() {
   (payload.logs || []).forEach((row) => log(row.code || 'READER', row.message || '', row.level === 'warn' ? 'warn' : row.level === 'error' ? 'err' : 'ok'));
   const itemsByFeed = new Map();
   (payload.items || []).forEach((item) => {
-    const next = { ...item, sourceIcon: item.sourceIcon || toFaviconUrl(item.sourceDomain), publishedAt: normalizePublishedAt(item.publishedAt) };
+    const next = {
+      ...item,
+      title: decodeHtmlEntities(item.title || 'Untitled item'),
+      excerpt: decodeHtmlEntities(item.excerpt || ''),
+      sourceIcon: item.sourceIcon || toFaviconUrl(item.sourceDomain),
+      publishedAt: normalizePublishedAt(item.publishedAt)
+    };
     if (!itemsByFeed.has(next.sourceId)) itemsByFeed.set(next.sourceId, []);
     itemsByFeed.get(next.sourceId).push(next);
   });
@@ -844,7 +892,10 @@ function bindEvents() {
   els.selectVisibleBtn.addEventListener('click', () => setVisibleSelection(true));
   els.clearVisibleBtn.addEventListener('click', () => setVisibleSelection(false));
 
-  els.exportBtn.addEventListener('click', () => els.exportMenu.classList.toggle('open'));
+  els.exportBtn.addEventListener('click', () => {
+    if (els.exportBtn.disabled) return;
+    els.exportMenu.classList.toggle('open');
+  });
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.export-group')) els.exportMenu.classList.remove('open');
   });
@@ -872,6 +923,7 @@ function bindEvents() {
     renderStoryInspector();
     refreshReaderStatus();
   });
+  window.addEventListener('resize', updateDiscoverLayout);
 }
 
 function init() {
