@@ -8,6 +8,7 @@ const state = {
     feeds: [],
     selectedFeedId: null,
     selectedFeedIds: new Set(),
+    selectionMode: false,
     scanMode: 'standard',
     freshnessDays: null,
     streamController: null
@@ -52,11 +53,13 @@ const els = {
   clearBtn: document.getElementById('clearBtn'),
   includeSelectedBtn: document.getElementById('includeSelectedBtn'),
   ignoreSelectedBtn: document.getElementById('ignoreSelectedBtn'),
+  selectionModeBtn: document.getElementById('selectionModeBtn'),
+  selectionActions: document.getElementById('selectionActions'),
+  selectionCount: document.getElementById('selectionCount'),
   selectVisibleBtn: document.getElementById('selectVisibleBtn'),
   clearVisibleBtn: document.getElementById('clearVisibleBtn'),
   openReaderBtn: document.getElementById('openReaderBtn'),
   backDiscoverBtn: document.getElementById('backDiscoverBtn'),
-  bulkActionBar: document.getElementById('bulkActionBar'),
   metricDiscovered: document.getElementById('metricDiscovered'),
   metricIncluded: document.getElementById('metricIncluded'),
   metricIgnored: document.getElementById('metricIgnored'),
@@ -310,6 +313,7 @@ function resetSessionData() {
   state.session.feeds = [];
   state.session.selectedFeedId = null;
   state.session.selectedFeedIds.clear();
+  state.session.selectionMode = false;
   state.reader.selectedSourceId = 'all';
   state.reader.selectedHeadlineId = null;
   rebuildReaderData();
@@ -351,6 +355,7 @@ function renderFeedList() {
   els.feedListCount.textContent = `${filtered.length} shown`;
   if (!filtered.length) return (els.feedList.innerHTML = '<div class="hint">No feed records for this filter.</div>');
   filtered.forEach((feed) => {
+    const stateLabel = feed.state === 'ignored' ? 'Ignored' : feed.state === 'problem' ? 'Problem' : 'Included';
     const row = document.createElement('div');
     row.className = `feed-row ${feed.state === 'ignored' ? 'excluded' : ''} ${feed.id === state.session.selectedFeedId ? 'focused' : ''}`;
     const latestText = feed.latestTitle || 'No items detected';
@@ -364,18 +369,19 @@ function renderFeedList() {
           <span class="sub url">${escapeHtml(feed.url)}</span>
         </div>
         <div class="feed-tertiary">
-          <span class="clamp-1">${escapeHtml(latestText)}</span>
+          <span class="clamp-1">Latest: ${escapeHtml(latestText)}</span>
           <span class="badge age">${escapeHtml(feed.latestAge || 'Unknown time')}</span>
-          <span class="badge state-${feed.state}">${feed.state === 'ignored' ? 'Ignored' : 'Included'}</span>
+          <span class="badge state-${feed.state}">${stateLabel}</span>
           <span class="badge type">${escapeHtml(feed.format.toUpperCase())}</span>
         </div>
       </div>
       <div class="row-actions">
-        <button class="row-action" data-act="copy" title="Copy feed URL">Copy URL</button>
-        <button class="row-action" data-act="open" title="Open feed in new tab">Open feed</button>
-        <button class="row-action" data-act="toggle" title="${feed.state === 'ignored' ? 'Restore feed' : 'Ignore feed'}">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
+        <button class="row-action" data-act="copy" title="Copy feed URL" aria-label="Copy feed URL">Copy URL</button>
+        <button class="row-action" data-act="open" title="Open feed in new tab" aria-label="Open feed in new tab">Open feed</button>
+        <button class="row-action" data-act="toggle" title="${feed.state === 'ignored' ? 'Restore feed' : 'Ignore feed'}" aria-label="${feed.state === 'ignored' ? 'Restore feed' : 'Ignore feed'}">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
       </div>
     `;
+    row.classList.toggle('selection-enabled', state.session.selectionMode);
     row.addEventListener('click', (e) => {
       if (e.target.matches('input,button')) return;
       state.session.selectedFeedId = feed.id;
@@ -437,8 +443,13 @@ function updateDiscoverMetrics() {
   els.metricDiscovered.textContent = total;
   els.metricIncluded.textContent = included;
   els.metricIgnored.textContent = ignored;
-  els.discoverSummary.textContent = `${included} included · ${ignored} ignored${selected ? ` · ${selected} selected` : ''}`;
-  els.bulkActionBar.classList.toggle('hidden', selected === 0);
+  els.discoverSummary.textContent = `${included} included · ${ignored} ignored`;
+  els.selectionCount.textContent = `${selected} selected`;
+  els.selectionActions.classList.toggle('hidden', !state.session.selectionMode);
+  els.includeSelectedBtn.disabled = selected === 0;
+  els.ignoreSelectedBtn.disabled = selected === 0;
+  els.clearVisibleBtn.disabled = selected === 0;
+  els.selectionModeBtn.textContent = state.session.selectionMode ? 'Done' : 'Select';
   els.exportBtn.disabled = included === 0;
   els.exportBtn.title = included === 0 ? 'No included feeds' : 'Export included feeds';
   if (state.mode === 'discover') els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${included}`;
@@ -446,7 +457,7 @@ function updateDiscoverMetrics() {
 
 function updateDiscoverLayout() {
   const hasSelection = !!state.session.selectedFeedId;
-  const hasWideSpace = window.innerWidth >= 1500;
+  const hasWideSpace = window.innerWidth >= 1320;
   els.discoverPane.classList.toggle('has-inspector', hasSelection && hasWideSpace);
 }
 
@@ -562,6 +573,8 @@ function batchSetSelected(nextState) {
     if (feed) feed.state = nextState;
   });
   log(nextState === 'ignored' ? 'IGNORE' : 'INCLUDE', `${state.session.selectedFeedIds.size} selected feeds set to ${nextState}`, nextState === 'ignored' ? 'warn' : 'ok');
+  state.session.selectedFeedIds.clear();
+  state.session.selectionMode = false;
   rebuildReaderData();
   syncReaderSelection();
   renderFeedList();
@@ -842,7 +855,7 @@ function setMode(mode) {
   els.readerPane.classList.toggle('active', !isDiscover);
   els.discoverActions.classList.toggle('hidden', !isDiscover);
   els.readerActions.classList.toggle('hidden', isDiscover);
-  els.toolbarMode.textContent = isDiscover ? 'Discover' : 'Preview latest articles';
+  els.toolbarMode.textContent = isDiscover ? 'Discover' : 'Preview';
   if (isDiscover) {
     els.toolbarContext.textContent = state.session.running ? 'Running' : (state.session.feeds.length ? 'Complete' : 'Idle');
     els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${getIncludedFeeds().length}`;
@@ -871,6 +884,12 @@ function bindEvents() {
   els.clearBtn.addEventListener('click', clearSession);
   els.includeSelectedBtn.addEventListener('click', () => batchSetSelected('included'));
   els.ignoreSelectedBtn.addEventListener('click', () => batchSetSelected('ignored'));
+  els.selectionModeBtn.addEventListener('click', () => {
+    state.session.selectionMode = !state.session.selectionMode;
+    if (!state.session.selectionMode) state.session.selectedFeedIds.clear();
+    renderFeedList();
+    updateDiscoverMetrics();
+  });
   els.openReaderBtn.addEventListener('click', async () => {
     const included = getIncludedFeeds().length;
     log('RUN', included ? `Preview latest articles from ${included} included feed(s)` : 'Preview latest articles with no included feeds', included ? 'ok' : 'warn');

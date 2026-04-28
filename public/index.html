@@ -18,33 +18,32 @@
       </div>
 
       <div class="mode-panel active" data-panel="discover">
-        <div class="sidebar-panel stack">
-          <div class="label">Websites to scan</div>
-          <textarea id="seedInput" placeholder="https://example.com&#10;https://news.example.org"></textarea>
-          <div class="tiny">Use newline, comma, or space-separated URLs.</div>
-        </div>
+        <div class="sidebar-panel stack discover-controls">
+          <div class="control-field">
+            <div class="field-label">Websites to scan</div>
+            <textarea id="seedInput" placeholder="https://example.com&#10;https://news.example.org"></textarea>
+            <div class="tiny">Use newline, comma, or space-separated URLs.</div>
+          </div>
 
-        <div class="sidebar-panel stack">
-          <div class="label">Scan depth</div>
-          <select id="scanModeSelect">
-            <option value="quick">Quick scan</option>
-            <option value="standard" selected>Standard scan</option>
-            <option value="deep">Deep scan</option>
-          </select>
-          <div class="tiny">Deep scan checks more same-site pages. It can find hidden feeds, but takes longer.</div>
-        </div>
+          <div class="control-field compact-field">
+            <div class="field-label">Scan depth</div>
+            <select id="scanModeSelect">
+              <option value="quick">Quick scan</option>
+              <option value="standard" selected>Standard scan</option>
+              <option value="deep">Deep scan</option>
+            </select>
+          </div>
 
-        <div class="sidebar-panel stack">
-          <div class="label">Freshness</div>
-          <select id="freshnessSelect">
-            <option value="">Any activity</option>
-            <option value="30">Active in 30 days</option>
-            <option value="90">Active in 90 days</option>
-            <option value="365">Active in 1 year</option>
-          </select>
-        </div>
+          <div class="control-field compact-field">
+            <div class="field-label">Freshness</div>
+            <select id="freshnessSelect">
+              <option value="">Any activity</option>
+              <option value="30">Active in 30 days</option>
+              <option value="90">Active in 90 days</option>
+              <option value="365">Active in 1 year</option>
+            </select>
+          </div>
 
-        <div class="sidebar-panel stack">
           <button class="btn primary" id="startBtn">Find feeds</button>
           <div class="row2">
             <button class="btn" id="stopBtn">Stop</button>
@@ -107,7 +106,7 @@
       </header>
 
       <section class="workspace discover-layout active" id="discoverPane">
-        <section class="pane">
+        <section class="pane results-pane">
           <div class="pane-head"><div class="pane-title">Results</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
           <div class="pane-toolbar">
             <div class="toolbar-inline discover-toolbar">
@@ -118,24 +117,26 @@
                 <option value="ignored">Ignored</option>
                 <option value="problem">Problem</option>
               </select>
-              <div class="export-group">
-                <button class="btn micro" id="exportBtn">Export included ▾</button>
-                <div class="export-menu" id="exportMenu">
-                  <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
-                  <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
-                  <button class="btn micro ghost" id="exportCsvBtn">CSV</button>
-                  <button class="btn micro ghost" id="exportJsonBtn">JSON</button>
+              <div class="results-toolbar-actions">
+                <span class="tiny mono" id="discoverSummary">0 included · 0 ignored</span>
+                <button class="btn micro ghost" id="selectionModeBtn">Select</button>
+                <div class="selection-actions hidden" id="selectionActions">
+                  <span class="tiny mono" id="selectionCount">0 selected</span>
+                  <button class="btn micro ghost" id="selectVisibleBtn">Select shown</button>
+                  <button class="btn micro ghost" id="clearVisibleBtn">Clear</button>
+                  <button class="btn micro" id="includeSelectedBtn">Include</button>
+                  <button class="btn micro danger" id="ignoreSelectedBtn">Ignore</button>
+                </div>
+                <div class="export-group">
+                  <button class="btn micro" id="exportBtn">Export included ▾</button>
+                  <div class="export-menu" id="exportMenu">
+                    <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
+                    <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
+                    <button class="btn micro ghost" id="exportCsvBtn">CSV</button>
+                    <button class="btn micro ghost" id="exportJsonBtn">JSON</button>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
-          <div class="pane-toolbar selection-bar" id="bulkActionBar">
-            <div class="toolbar-inline discover-selection-toolbar">
-              <div class="tiny" id="discoverSummary">0 total</div>
-              <button class="btn micro ghost" id="selectVisibleBtn">Select shown</button>
-              <button class="btn micro ghost" id="clearVisibleBtn">Clear selection</button>
-              <button class="btn micro" id="includeSelectedBtn">Include selected</button>
-              <button class="btn micro danger" id="ignoreSelectedBtn">Ignore selected</button>
             </div>
           </div>
           <div class="pane-body feed-list" id="feedList"></div>
