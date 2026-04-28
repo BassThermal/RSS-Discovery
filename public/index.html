@@ -13,56 +13,62 @@
         <div class="brand-title">RSS Discovery</div>
         <div class="nav-list">
           <button class="nav-btn active" data-mode="discover">Discover</button>
-          <button class="nav-btn" data-mode="reader">Reader</button>
+          <button class="nav-btn" data-mode="reader">Preview latest articles</button>
         </div>
       </div>
 
       <div class="mode-panel active" data-panel="discover">
         <div class="sidebar-panel stack">
-          <div class="label">Seed URLs</div>
+          <div class="label">Websites to scan</div>
           <textarea id="seedInput" placeholder="https://example.com&#10;https://news.example.org"></textarea>
-          <div class="tiny">Supports newline, comma, or space-separated entries.</div>
+          <div class="tiny">Use newline, comma, or space-separated URLs.</div>
         </div>
 
         <div class="sidebar-panel stack">
-          <div class="label">Discover Filters</div>
-          <div class="row2">
-            <select id="discoverFilter">
-              <option value="all">All states</option>
-              <option value="candidate">Candidates</option>
-              <option value="kept">Kept</option>
-              <option value="excluded">Excluded</option>
-            </select>
-            <input id="discoverSearch" placeholder="Search domain/title/url" />
-          </div>
+          <div class="label">Scan depth</div>
+          <select id="scanModeSelect">
+            <option value="quick">Quick scan</option>
+            <option value="standard" selected>Standard scan</option>
+            <option value="deep">Deep scan</option>
+          </select>
+          <div class="tiny">Deep scan checks more same-site pages. It can find hidden feeds, but takes longer.</div>
         </div>
 
         <div class="sidebar-panel stack">
-          <div class="label">Run</div>
-          <button class="btn primary" id="startBtn">Start crawl</button>
+          <div class="label">Freshness</div>
+          <select id="freshnessSelect">
+            <option value="">Any activity</option>
+            <option value="30">Active in 30 days</option>
+            <option value="90">Active in 90 days</option>
+            <option value="365">Active in 1 year</option>
+          </select>
+        </div>
+
+        <div class="sidebar-panel stack">
+          <button class="btn primary" id="startBtn">Find feeds</button>
           <div class="row2">
             <button class="btn" id="stopBtn">Stop</button>
-            <button class="btn danger" id="clearBtn">Clear session</button>
+            <button class="btn danger" id="clearBtn">Clear</button>
           </div>
         </div>
 
         <div class="sidebar-panel metric-grid">
-          <div class="metric"><div class="k">Discovered</div><div class="v" id="metricDiscovered">0</div></div>
-          <div class="metric"><div class="k">Kept</div><div class="v" id="metricKept">0</div></div>
-          <div class="metric"><div class="k">Excluded</div><div class="v" id="metricExcluded">0</div></div>
+          <div class="metric"><div class="k">Found</div><div class="v" id="metricDiscovered">0</div></div>
+          <div class="metric"><div class="k">Included</div><div class="v" id="metricIncluded">0</div></div>
+          <div class="metric"><div class="k">Ignored</div><div class="v" id="metricIgnored">0</div></div>
         </div>
       </div>
 
       <div class="mode-panel" data-panel="reader">
         <div class="sidebar-panel reader-controls stack">
-          <div class="label">Reader Controls</div>
+          <div class="label">Latest articles filters</div>
           <div class="control-field">
-            <div class="field-label">Source filter</div>
-            <input id="readerSourceSearch" placeholder="Search sources" />
+            <div class="field-label">Included feeds filter</div>
+            <input id="readerSourceSearch" placeholder="Search included feeds" />
           </div>
           <div class="control-field">
-            <div class="field-label">Headline filter</div>
-            <input id="headlineSearch" placeholder="Search headline/excerpt" />
+            <div class="field-label">Article filter</div>
+            <input id="headlineSearch" placeholder="Search title/excerpt" />
           </div>
           <div class="control-field">
             <div class="field-label">Range</div>
@@ -76,9 +82,9 @@
         </div>
 
         <div class="sidebar-panel reader-scope tiny mono" id="readerScopeSummary">
-          <span id="readerScopeSources">0 sources</span>
+          <span id="readerScopeSources">0 included feeds</span>
           <span class="scope-dot">·</span>
-          <span id="readerScopeStories">0 visible stories</span>
+          <span id="readerScopeStories">0 visible articles</span>
         </div>
       </div>
     </aside>
@@ -93,9 +99,16 @@
           <span class="mono" id="toolbarSecondary">Session ready</span>
         </div>
         <div class="toolbar-right" id="discoverActions">
-          <button class="btn micro" id="keepSelectedBtn">Keep selected</button>
-          <button class="btn micro" id="excludeSelectedBtn">Exclude selected</button>
-          <button class="btn micro" id="openReaderBtn">Open in Reader</button>
+          <div class="export-group">
+            <button class="btn micro" id="exportBtn">Export included</button>
+            <div class="export-menu" id="exportMenu">
+              <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
+              <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
+              <button class="btn micro ghost" id="exportCsvBtn">CSV</button>
+              <button class="btn micro ghost" id="exportJsonBtn">JSON</button>
+            </div>
+          </div>
+          <button class="btn micro" id="openReaderBtn">Preview latest articles</button>
         </div>
         <div class="toolbar-right hidden" id="readerActions">
           <button class="btn micro" id="backDiscoverBtn">Back to Discover</button>
@@ -103,44 +116,59 @@
       </header>
 
       <section class="workspace discover-layout active" id="discoverPane">
-        <section class="pane no-toolbar">
-          <div class="pane-head"><div class="pane-title">Activity</div><div class="pane-meta mono" id="logCount">0 actions</div></div>
-          <div class="pane-body terminal" id="terminal"></div>
-        </section>
-
         <section class="pane">
-          <div class="pane-head"><div class="pane-title">Discovered feeds</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
+          <div class="pane-head"><div class="pane-title">Results</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
           <div class="pane-toolbar">
+            <div class="toolbar-inline wrap">
+              <input id="discoverSearch" placeholder="Search domain/title/feed URL" />
+              <select id="discoverFilter">
+                <option value="all">All</option>
+                <option value="included">Included</option>
+                <option value="ignored">Ignored</option>
+                <option value="problem">Problem</option>
+              </select>
+              <button class="btn micro ghost" id="selectVisibleBtn">Select all shown</button>
+              <button class="btn micro ghost" id="clearVisibleBtn">Deselect shown</button>
+            </div>
+          </div>
+          <div class="pane-toolbar selection-bar" id="bulkActionBar">
             <div class="toolbar-inline">
-              <div class="tiny" id="discoverSummary">0 total · 0 candidate · 0 kept · 0 excluded</div>
-              <button class="btn micro ghost" id="selectVisibleBtn">Select visible</button>
-              <button class="btn micro ghost" id="clearVisibleBtn">Clear visible</button>
+              <div class="tiny" id="discoverSummary">0 total</div>
+              <button class="btn micro" id="includeSelectedBtn">Include selected</button>
+              <button class="btn micro danger" id="ignoreSelectedBtn">Ignore selected</button>
             </div>
           </div>
           <div class="pane-body feed-list" id="feedList"></div>
         </section>
 
         <aside class="pane no-toolbar discover-inspector-pane">
-          <div class="pane-head"><div class="pane-title">Discover inspector</div></div>
+          <div class="pane-head"><div class="pane-title">Feed details</div></div>
           <div class="pane-body inspector" id="discoverInspector"></div>
         </aside>
+
+        <section class="pane no-toolbar log-pane">
+          <details class="log-details" open>
+            <summary class="pane-head"><span class="pane-title">Scan log</span><span class="pane-meta mono" id="logCount">0 actions</span></summary>
+            <div class="pane-body terminal" id="terminal"></div>
+          </details>
+        </section>
       </section>
 
       <section class="workspace reader-layout" id="readerPane">
         <section class="pane">
-          <div class="pane-head"><div class="pane-title">Feed pack</div><div class="pane-meta mono" id="packCount">0 sources</div></div>
-          <div class="pane-toolbar"><div class="tiny" id="packSummary">Filtered sources</div></div>
+          <div class="pane-head"><div class="pane-title">Included feeds</div><div class="pane-meta mono" id="packCount">0 sources</div></div>
+          <div class="pane-toolbar"><div class="tiny" id="packSummary">Included feeds for preview</div></div>
           <div class="pane-body pack-list" id="packList"></div>
         </section>
 
         <section class="pane">
-          <div class="pane-head"><div class="pane-title">Headline river</div><div class="pane-meta mono" id="headlineCount">0 shown</div></div>
-          <div class="pane-toolbar"><div class="tiny" id="headlineSummary">Chronology-first normalized stream</div></div>
+          <div class="pane-head"><div class="pane-title">Latest articles</div><div class="pane-meta mono" id="headlineCount">0 shown</div></div>
+          <div class="pane-toolbar"><div class="tiny" id="headlineSummary">Loaded from included feeds</div></div>
           <div class="pane-body headline-list" id="headlineList"></div>
         </section>
 
         <aside class="pane no-toolbar story-pane">
-          <div class="pane-head"><div class="pane-title">Story inspector</div></div>
+          <div class="pane-head"><div class="pane-title">Story details</div></div>
           <div class="pane-body inspector" id="storyInspector"></div>
         </aside>
       </section>
@@ -152,7 +180,6 @@
     </main>
   </div>
 
-  
   <script src="/app.js"></script>
 </body>
 </html>

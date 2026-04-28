@@ -168,7 +168,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 
 .workspace { min-height: 0; display: none; gap: 8px; }
 .workspace.active { display: grid; }
-.discover-layout { grid-template-columns: 1.1fr 1.2fr 320px; }
+.discover-layout { grid-template-columns: 1.4fr 320px 340px; }
 .reader-layout { grid-template-columns: 280px 1fr 330px; }
 
 body.reader-active .app-shell { grid-template-columns: 252px 1fr; }
@@ -239,7 +239,7 @@ body.reader-active .reader-controls select { min-height: var(--h28); }
 
 .feed-row {
   display: grid;
-  grid-template-columns: 16px 18px 1fr 24px;
+  grid-template-columns: 16px 18px 1fr 24px 24px;
   align-items: center;
   gap: 7px;
   min-height: 48px;
@@ -373,8 +373,9 @@ body.reader-active .reader-controls select { min-height: var(--h28); }
   color: var(--text-2);
   white-space: nowrap;
 }
-.badge.state-kept { border-color: #5b8f65; color: var(--ok); }
-.badge.state-excluded { border-color: #7d4b47; color: #ff9c95; }
+.badge.state-included, .badge.state-kept { border-color: #5b8f65; color: var(--ok); }
+.badge.state-ignored, .badge.state-excluded { border-color: #7d4b47; color: #ff9c95; }
+.badge.state-problem { border-color: #9a7f32; color: var(--warn); }
 .badge.type { color: var(--accent); }
 .badge.age { align-self: start; margin-top: 1px; }
 
@@ -463,4 +464,19 @@ body.reader-active .reader-layout .headline-row { padding-left: 8px; padding-rig
   body.reader-active .app-shell { grid-template-columns: 264px 1fr; }
   body.reader-active .reader-layout { grid-template-columns: 230px 1fr; }
   .story-pane { display: none; }
+}
+
+
+.export-group { position: relative; }
+.export-menu { position: absolute; top: calc(100% + 4px); right: 0; display: none; min-width: 132px; background: var(--panel-2); border: 1px solid var(--border-strong); border-radius: var(--r1); padding: 4px; z-index: 12; }
+.export-menu.open { display: grid; gap: 4px; }
+.toolbar-inline.wrap { flex-wrap: wrap; justify-content: flex-start; }
+.selection-bar { background: #232323; }
+.log-pane details { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+.log-pane summary { list-style: none; cursor: pointer; }
+.log-pane summary::-webkit-details-marker { display: none; }
+.log-details:not([open]) .terminal { display: none; }
+@media (max-width: 1380px) {
+  .discover-layout { grid-template-columns: 1fr 320px; }
+  .log-pane { display: none; }
 }
