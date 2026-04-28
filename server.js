@@ -11,11 +11,12 @@ const FEED_GUESSES = ['/feed', '/feed.xml', '/rss', '/rss.xml', '/atom.xml', '/i
 const FEED_TYPE_PATTERN = /(application\/(rss|atom)\+xml|application\/xml|text\/xml|application\/feed\+json|application\/json)/i;
 const FEED_HINT_PATTERN = /(rss|feed|atom|xml|jsonfeed|subscribe|syndication)/i;
 const HARD_FEED_PATH_PATTERN = /\/(feed|rss|atom)(\b|[\/_-])/i;
-const BINARY_EXT = /\.(png|jpe?g|gif|webp|svg|ico|pdf|zip|gz|mp4|mp3|avi|mov|woff2?|ttf)(\?|$)/i;
+const BINARY_EXT = /\.(png|jpe?g|gif|webp|svg|ico|pdf|zip|gz|mp4|mp3|avi|mov|woff2?|ttf|7z|exe|dmg)(\?|$)/i;
 const SOCIAL_DOMAINS = new Set(['twitter.com', 'x.com', 'facebook.com', 'instagram.com', 'pinterest.com', 'youtube.com', 'linkedin.com', 't.me']);
 const TOOL_PATH_PATTERN = /(privacy|terms|about|contact|career|careers|adverti|login|signup|account|support|help|docs?|documentation|publisher|widget|widgets|builder|combiner|scheduler|embed|oembed|wp-json|api|jobs?|faq|cookies?|policy)/i;
 const FEEDSPOT_JUNK_PATH = /(rss-feed|top-rss|blog|directory|news\/|news$|magazines?|podcasts?|websites?|infiniterss\.php)/i;
 const JUNK_HOST_PATTERNS = [/^feedspot\.com$/i, /(?:^|\.)feedspot\.com$/i, /(?:^|\.)facebook\.com$/i, /(?:^|\.)twitter\.com$/i, /(?:^|\.)x\.com$/i];
+const SCAN_LINK_HINT_PATTERN = /\/(feed|rss|atom|blog|news|articles|stories|posts|subscribe|press|updates|category|tag)(\/|$|\?|#)/i;
 
 const VALIDATION_CONCURRENCY = 6;
 const SEED_CONCURRENCY = 2;
@@ -113,6 +114,17 @@ function stripHtml(value) {
   return String(value || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function getScanConfig(scanMode = 'standard') {
+  const mode = String(scanMode || 'standard').toLowerCase();
+  if (mode === 'quick') {
+    return { mode: 'quick', maxDepth: 0, maxPagesPerSeed: 1 };
+  }
+  if (mode === 'deep') {
+    return { mode: 'deep', maxDepth: 2, maxPagesPerSeed: 50 };
+  }
+  return { mode: 'standard', maxDepth: 1, maxPagesPerSeed: 12 };
+}
+
 async function fetchText(url, options = {}) {
   const { cacheBucket = 'feedFetch' } = options;
   const targetMap = cache[cacheBucket] || cache.feedFetch;
@@ -131,6 +143,55 @@ async function fetchText(url, options = {}) {
   const payload = { text: await res.text(), contentType: res.headers.get('content-type') || '' };
   setCache(targetMap, url, payload, ttl);
   return { ...payload, fromCache: false };
+}
+
+function isSocialHost(host) {
+  return [...SOCIAL_DOMAINS].some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+function isLikelyHtmlDocument(text, contentType) {
+  const type = String(contentType || '').toLowerCase();
+  if (type && !type.includes('html') && !type.includes('text/plain')) return false;
+  const sample = String(text || '').slice(0, 1200).toLowerCase();
+  return sample.includes('<html') || sample.includes('<head') || sample.includes('<body') || sample.includes('<!doctype html');
+}
+
+function extractInternalScanLinks(html, pageUrl, rootHost, depth) {
+  const $ = cheerio.load(html);
+  const links = [];
+  const seen = new Set();
+
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    const normalized = normalizeUrl(href, pageUrl);
+    if (!normalized || seen.has(normalized)) return;
+
+    let parsed;
+    try {
+      parsed = new URL(normalized);
+    } catch {
+      return;
+    }
+
+    const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+    const pathAndQuery = `${parsed.pathname || ''}${parsed.search || ''}`.toLowerCase();
+    if (rootDomain(host) !== rootHost) return;
+    if (isSocialHost(host)) return;
+    if (BINARY_EXT.test(pathAndQuery)) return;
+    if (TOOL_PATH_PATTERN.test(pathAndQuery) && !SCAN_LINK_HINT_PATTERN.test(pathAndQuery)) return;
+
+    const anchorText = ($(el).text() || '').toLowerCase();
+    const likelyByText = /\b(feed|rss|atom|blog|news|articles|stories|posts|subscribe|press|updates|category|tag)\b/.test(anchorText);
+    if (!SCAN_LINK_HINT_PATTERN.test(pathAndQuery) && !likelyByText) {
+      if (depth > 0) return;
+      if (parsed.pathname.split('/').filter(Boolean).length > 1) return;
+    }
+
+    seen.add(normalized);
+    links.push(normalized);
+  });
+
+  return links;
 }
 
 function extractUrlCandidate(raw) {
@@ -187,7 +248,7 @@ function rejectCandidate(rawUrl, context = {}) {
     const query = url.search.toLowerCase();
 
     if (BINARY_EXT.test(rawUrl)) return 'binary-ext';
-    if ([...SOCIAL_DOMAINS].some((d) => host === d || host.endsWith(`.${d}`))) return 'social-domain';
+    if (isSocialHost(host)) return 'social-domain';
     if (JUNK_HOST_PATTERNS.some((pattern) => pattern.test(host)) && !FEED_HINT_PATTERN.test(pathname + query)) return 'known-junk-host';
 
     if (host.endsWith('feedspot.com') && pathname.includes('infiniterss.php')) return 'wrapper-not-feed';
@@ -208,7 +269,7 @@ function rejectCandidate(rawUrl, context = {}) {
   }
 }
 
-function extractCandidates(html, seedUrl) {
+function extractCandidates(html, pageUrl) {
   const $ = cheerio.load(html);
   const found = [];
   const seen = new Set();
@@ -224,7 +285,7 @@ function extractCandidates(html, seedUrl) {
   }
 
   function addCandidate(href, context = {}) {
-    const normalized = normalizeUrl(href, seedUrl);
+    const normalized = normalizeUrl(href, pageUrl);
     if (!normalized || seen.has(normalized)) return;
     seen.add(normalized);
 
@@ -257,8 +318,6 @@ function extractCandidates(html, seedUrl) {
 
   $('link[rel]').each((_, el) => {
     const rel = ($(el).attr('rel') || '').toLowerCase();
-    if (!rel.includes('alternate')) return;
-
     const href = $(el).attr('href') || '';
     const type = ($(el).attr('type') || '').toLowerCase();
     if (!href || (!FEED_TYPE_PATTERN.test(type) && !FEED_HINT_PATTERN.test(href))) return;
@@ -274,6 +333,53 @@ function extractCandidates(html, seedUrl) {
 
   FEED_GUESSES.forEach((guess) => addCandidate(guess, { kind: 'guess' }));
   return { found, stats };
+}
+
+async function collectCandidatesFromSeed(seed, scanConfig, emit, emitProgress) {
+  const seedHost = getDomain(seed);
+  const seedRoot = rootDomain(seedHost);
+  const queue = [{ url: seed, depth: 0 }];
+  const visited = new Set();
+  const pagesScanned = [];
+  const extractedRows = [];
+
+  while (queue.length && pagesScanned.length < scanConfig.maxPagesPerSeed) {
+    const current = queue.shift();
+    if (!current || visited.has(current.url)) continue;
+    visited.add(current.url);
+
+    emit({ code: 'FETCH', level: 'ok', message: `scan page ${current.url}` });
+    emitProgress('scanning-page', { page: current.url, depth: current.depth, scanned: pagesScanned.length + 1, pageLimit: scanConfig.maxPagesPerSeed });
+
+    let page;
+    try {
+      page = await fetchText(current.url, { cacheBucket: 'seedFetch' });
+    } catch (err) {
+      emit({ code: 'SKIP', level: 'warn', message: `page failed ${current.url} (${err.message})` });
+      continue;
+    }
+
+    if (!isLikelyHtmlDocument(page.text, page.contentType)) {
+      emit({ code: 'SKIP', level: 'warn', message: `non-html page ${current.url}` });
+      continue;
+    }
+
+    pagesScanned.push(current.url);
+    const { found, stats } = extractCandidates(page.text, current.url);
+    extractedRows.push(...found);
+
+    emit({ code: 'DETECT', level: 'ok', message: `${current.url} recovered ${stats.detected} candidates (${stats.skipped} skipped early)` });
+
+    if (current.depth >= scanConfig.maxDepth) continue;
+    const internalLinks = extractInternalScanLinks(page.text, current.url, seedRoot, current.depth);
+    internalLinks.forEach((link) => {
+      if (!visited.has(link) && !queue.some((q) => q.url === link) && queue.length + pagesScanned.length < scanConfig.maxPagesPerSeed * 2) {
+        queue.push({ url: link, depth: current.depth + 1 });
+      }
+    });
+  }
+
+  return { extracted: extractedRows, pagesScanned };
 }
 
 function normalizeParsedItem(item, feedUrl, idx) {
@@ -333,7 +439,7 @@ function toFeedRecord(seedUrl, feedUrl, parsed, meta = {}) {
     wrappedUrl: meta.wrappedUrl || '',
     discoveredVia: meta.kind || 'scan',
     format: parsed.feedType || 'rss',
-    state: 'candidate',
+    state: 'included',
     latestTitle: latest?.title || 'No items detected',
     latestUrl: latest?.url || '',
     latestAt,
@@ -407,9 +513,10 @@ async function validateCandidate(seed, candidate, emit) {
   }
 }
 
-async function discoverFeeds(seeds, onEvent) {
+async function discoverFeeds(seeds, options = {}, onEvent) {
   const logs = [];
   const dedupe = new Map();
+  const scanConfig = getScanConfig(options.scanMode);
 
   const emit = (row) => {
     logs.push(row);
@@ -419,30 +526,19 @@ async function discoverFeeds(seeds, onEvent) {
     if (onEvent) onEvent({ type: 'progress', stage, ...detail });
   };
 
-  emit({ code: 'RUN', level: 'ok', message: `discovery session started (${seeds.length} seed(s))` });
-  emitProgress('start', { seeds: seeds.length, feeds: 0 });
+  emit({ code: 'RUN', level: 'ok', message: `discovery session started (${seeds.length} seed(s), ${scanConfig.mode} mode)` });
+  emitProgress('start', { seeds: seeds.length, feeds: 0, scanMode: scanConfig.mode, scanConfig });
 
   let validated = 0;
   let totalCandidates = 0;
 
   await mapLimit(seeds, SEED_CONCURRENCY, async (seed) => {
     emit({ code: 'FETCH', level: 'ok', message: `seed ${seed}` });
-    emitProgress('scanning-seed', { seed });
+    emitProgress('scanning-seed', { seed, scanMode: scanConfig.mode });
 
-    let page;
-    try {
-      page = await fetchText(seed, { cacheBucket: 'seedFetch' });
-    } catch (err) {
-      emit({ code: 'REJECT', level: 'warn', message: `seed failed ${seed} (${err.message})` });
-      return;
-    }
-
-    const { found: extracted, stats } = extractCandidates(page.text, seed);
-    const candidates = extracted.filter((candidate) => !candidate.rejectedBy);
-    totalCandidates += candidates.length;
-
-    emit({ code: 'DETECT', level: 'ok', message: `${seed} recovered ${stats.detected} candidates (${stats.skipped} skipped early)` });
-    emitProgress('candidates-recovered', { seed, detected: stats.detected, skipped: stats.skipped, recovered: stats.recovered, totalCandidates });
+    const { extracted } = await collectCandidatesFromSeed(seed, scanConfig, emit, emitProgress);
+    const uniqueCandidates = [];
+    const seen = new Set();
 
     extracted.forEach((candidate) => {
       if (candidate.wrapperAction === 'unwrapped') {
@@ -450,11 +546,18 @@ async function discoverFeeds(seeds, onEvent) {
       } else if (candidate.wrapperAction === 'unwrapped-empty') {
         emit({ code: 'SKIP', level: 'warn', message: `junk candidate ${candidate.url}` });
       } else if (candidate.rejectedBy) {
-        if (stats.skipped <= 40) emit({ code: 'SKIP', level: 'warn', message: `${candidate.rejectedBy} ${candidate.url}` });
+        emit({ code: 'SKIP', level: 'warn', message: `${candidate.rejectedBy} ${candidate.url}` });
       }
+
+      if (candidate.rejectedBy || seen.has(candidate.url)) return;
+      seen.add(candidate.url);
+      uniqueCandidates.push(candidate);
     });
 
-    await mapLimit(candidates, VALIDATION_CONCURRENCY, async (candidate) => {
+    totalCandidates += uniqueCandidates.length;
+    emitProgress('candidates-recovered', { seed, totalCandidates, unique: uniqueCandidates.length });
+
+    await mapLimit(uniqueCandidates, VALIDATION_CONCURRENCY, async (candidate) => {
       if (dedupe.has(candidate.url)) return;
       emitProgress('validating', { validated: validated + 1, total: Math.max(totalCandidates, validated + 1), feeds: dedupe.size });
       const result = await validateCandidate(seed, candidate, emit);
@@ -470,8 +573,8 @@ async function discoverFeeds(seeds, onEvent) {
 
   const feeds = [...dedupe.values()].sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0) || a.title.localeCompare(b.title));
   emit({ code: 'DONE', level: feeds.length ? 'ok' : 'warn', message: `${feeds.length} valid feeds discovered` });
-  emitProgress('done', { feeds: feeds.length, validated, totalCandidates });
-  return { feeds, logs };
+  emitProgress('done', { feeds: feeds.length, validated, totalCandidates, scanMode: scanConfig.mode });
+  return { feeds, logs, scanMode: scanConfig.mode, scanConfig };
 }
 
 async function loadReaderItems(feeds) {
@@ -519,30 +622,42 @@ async function loadReaderItems(feeds) {
   return { items, logs };
 }
 
+function getDiscoverRequestBody(req) {
+  const seeds = Array.isArray(req.body?.seeds) ? req.body.seeds.map((s) => normalizeUrl(s)).filter(Boolean) : [];
+  const scanMode = getScanConfig(req.body?.scanMode).mode;
+  const freshnessRaw = req.body?.freshnessDays;
+  const freshnessDays = freshnessRaw === null || freshnessRaw === undefined || freshnessRaw === '' ? null : Number(freshnessRaw);
+  return {
+    seeds,
+    scanMode,
+    freshnessDays: Number.isFinite(freshnessDays) && freshnessDays > 0 ? freshnessDays : null
+  };
+}
+
 app.post('/api/discover', async (req, res) => {
   try {
-    const seeds = Array.isArray(req.body?.seeds) ? req.body.seeds.map((s) => normalizeUrl(s)).filter(Boolean) : [];
-    if (!seeds.length) return res.status(400).json({ error: 'No valid seeds supplied', feeds: [], logs: [] });
-    return res.json(await discoverFeeds(seeds));
+    const body = getDiscoverRequestBody(req);
+    if (!body.seeds.length) return res.status(400).json({ error: 'No valid seeds supplied', feeds: [], logs: [] });
+    return res.json(await discoverFeeds(body.seeds, { scanMode: body.scanMode, freshnessDays: body.freshnessDays }));
   } catch (err) {
     return res.status(500).json({ error: err.message || 'discover-failed', feeds: [], logs: [] });
   }
 });
 
 app.post('/api/discover-stream', async (req, res) => {
-  const seeds = Array.isArray(req.body?.seeds) ? req.body.seeds.map((s) => normalizeUrl(s)).filter(Boolean) : [];
-  if (!seeds.length) return res.status(400).json({ error: 'No valid seeds supplied' });
+  const body = getDiscoverRequestBody(req);
+  if (!body.seeds.length) return res.status(400).json({ error: 'No valid seeds supplied' });
 
   res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
   res.setHeader('cache-control', 'no-cache, no-transform');
   res.setHeader('x-accel-buffering', 'no');
 
   const send = (row) => res.write(`${JSON.stringify(row)}\n`);
-  send({ type: 'session', ok: true, seeds: seeds.length });
+  send({ type: 'session', ok: true, seeds: body.seeds.length, scanMode: body.scanMode, freshnessDays: body.freshnessDays });
 
   try {
-    const result = await discoverFeeds(seeds, send);
-    send({ type: 'done', feeds: result.feeds.length });
+    const result = await discoverFeeds(body.seeds, { scanMode: body.scanMode, freshnessDays: body.freshnessDays }, send);
+    send({ type: 'done', feeds: result.feeds.length, scanMode: result.scanMode });
     return res.end();
   } catch (err) {
     send({ type: 'error', error: err.message || 'discover-failed' });

@@ -7,7 +7,10 @@ const state = {
     seeds: 0,
     feeds: [],
     selectedFeedId: null,
-    selectedFeedIds: new Set()
+    selectedFeedIds: new Set(),
+    scanMode: 'standard',
+    freshnessDays: null,
+    streamController: null
   },
   reader: {
     selectedSourceId: 'all',
@@ -33,21 +36,30 @@ const els = {
   statusRight: document.getElementById('statusRight'),
   discoverActions: document.getElementById('discoverActions'),
   readerActions: document.getElementById('readerActions'),
+  exportBtn: document.getElementById('exportBtn'),
+  exportMenu: document.getElementById('exportMenu'),
+  exportOpmlBtn: document.getElementById('exportOpmlBtn'),
+  copyUrlsBtn: document.getElementById('copyUrlsBtn'),
+  exportCsvBtn: document.getElementById('exportCsvBtn'),
+  exportJsonBtn: document.getElementById('exportJsonBtn'),
   seedInput: document.getElementById('seedInput'),
+  scanModeSelect: document.getElementById('scanModeSelect'),
+  freshnessSelect: document.getElementById('freshnessSelect'),
   discoverFilter: document.getElementById('discoverFilter'),
   discoverSearch: document.getElementById('discoverSearch'),
   startBtn: document.getElementById('startBtn'),
   stopBtn: document.getElementById('stopBtn'),
   clearBtn: document.getElementById('clearBtn'),
-  keepSelectedBtn: document.getElementById('keepSelectedBtn'),
-  excludeSelectedBtn: document.getElementById('excludeSelectedBtn'),
+  includeSelectedBtn: document.getElementById('includeSelectedBtn'),
+  ignoreSelectedBtn: document.getElementById('ignoreSelectedBtn'),
   selectVisibleBtn: document.getElementById('selectVisibleBtn'),
   clearVisibleBtn: document.getElementById('clearVisibleBtn'),
   openReaderBtn: document.getElementById('openReaderBtn'),
   backDiscoverBtn: document.getElementById('backDiscoverBtn'),
+  bulkActionBar: document.getElementById('bulkActionBar'),
   metricDiscovered: document.getElementById('metricDiscovered'),
-  metricKept: document.getElementById('metricKept'),
-  metricExcluded: document.getElementById('metricExcluded'),
+  metricIncluded: document.getElementById('metricIncluded'),
+  metricIgnored: document.getElementById('metricIgnored'),
   logCount: document.getElementById('logCount'),
   terminal: document.getElementById('terminal'),
   feedList: document.getElementById('feedList'),
@@ -155,7 +167,7 @@ function log(code, message, cls = '') {
 function renderTerminal() {
   els.terminal.innerHTML = '';
   els.logCount.textContent = `${state.logs.length} actions`;
-  if (!state.logs.length) return (els.terminal.innerHTML = '<div class="hint">Session idle. Awaiting crawl start.</div>');
+  if (!state.logs.length) return (els.terminal.innerHTML = '<div class="hint">Session idle. Awaiting scan.</div>');
   state.logs.slice(-300).forEach((row) => {
     const line = document.createElement('div');
     line.className = 'log-row';
@@ -181,6 +193,12 @@ async function apiPost(path, payload) {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
+}
+
+function toUiState(rawState) {
+  if (rawState === 'ignored' || rawState === 'excluded') return 'ignored';
+  if (rawState === 'problem') return 'problem';
+  return 'included';
 }
 
 function normalizeFeed(raw) {
@@ -211,7 +229,7 @@ function normalizeFeed(raw) {
     wrappedUrl: normalizeUrl(raw?.wrappedUrl || '', url) || '',
     discoveredVia: raw?.discoveredVia || 'scan',
     format: (raw?.format || 'rss').toLowerCase(),
-    state: raw?.state === 'kept' || raw?.state === 'excluded' ? raw.state : 'candidate',
+    state: toUiState(raw?.state),
     latestTitle: raw?.latestTitle || latest?.title || 'No items detected',
     latestUrl: normalizeUrl(raw?.latestUrl || latest?.url || '', url) || '',
     latestAt,
@@ -220,9 +238,23 @@ function normalizeFeed(raw) {
   };
 }
 
+function getIncludedFeeds() {
+  return state.session.feeds.filter((f) => f.state === 'included');
+}
+
+function getFreshnessCutoff() {
+  return state.session.freshnessDays ? Date.now() - state.session.freshnessDays * 86400000 : null;
+}
+
+function feedPassesFreshness(feed) {
+  const cutoff = getFreshnessCutoff();
+  if (!cutoff) return true;
+  return !!feed.latestAt && feed.latestAt >= cutoff;
+}
+
 function deriveReaderSourcesFromFeeds(feeds) {
-  const kept = feeds.filter((f) => f.state === 'kept');
-  const rows = kept.map((feed) => ({
+  const included = feeds.filter((f) => f.state === 'included');
+  const rows = included.map((feed) => ({
     id: feed.id,
     label: feed.title,
     domain: feed.sourceDomain,
@@ -232,12 +264,12 @@ function deriveReaderSourcesFromFeeds(feeds) {
     iconUrl: feed.sourceIcon || toFaviconUrl(feed.sourceDomain)
   }));
   const total = rows.reduce((n, r) => n + r.stories, 0);
-  return [{ id: 'all', label: 'All kept feeds', domain: 'session', feedUrl: '', active: true, stories: total }, ...rows];
+  return [{ id: 'all', label: 'All included feeds', domain: 'session', feedUrl: '', active: true, stories: total }, ...rows];
 }
 
 function deriveStoriesFromFeeds(feeds) {
   const stories = [];
-  feeds.filter((f) => f.state === 'kept').forEach((feed) => {
+  feeds.filter((f) => f.state === 'included').forEach((feed) => {
     (feed.items || []).forEach((item, idx) => {
       stories.push({
         id: `${feed.id}-s-${idx}`,
@@ -259,8 +291,8 @@ function deriveStoriesFromFeeds(feeds) {
 }
 
 function rebuildReaderData() {
-  state.reader.sources = deriveReaderSourcesFromFeeds(state.session.feeds);
-  state.reader.stories = deriveStoriesFromFeeds(state.session.feeds);
+  state.reader.sources = deriveReaderSourcesFromFeeds(state.session.feeds.filter(feedPassesFreshness));
+  state.reader.stories = deriveStoriesFromFeeds(state.session.feeds.filter(feedPassesFreshness));
 }
 
 function resetSessionData() {
@@ -279,6 +311,10 @@ function resetSessionData() {
 }
 
 function clearSession() {
+  if (state.session.streamController) {
+    state.session.streamController.abort();
+    state.session.streamController = null;
+  }
   state.logs = [];
   state.session.running = false;
   state.session.stopped = false;
@@ -292,8 +328,9 @@ function getFilteredFeeds() {
   const q = els.discoverSearch.value.trim().toLowerCase();
   return state.session.feeds.filter((feed) => {
     const stateOk = filter === 'all' || feed.state === filter;
+    const freshnessOk = feedPassesFreshness(feed);
     const hay = `${feed.title} ${feed.sourceDomain} ${feed.url} ${feed.latestTitle}`.toLowerCase();
-    return stateOk && (!q || hay.includes(q));
+    return stateOk && freshnessOk && (!q || hay.includes(q));
   });
 }
 
@@ -301,10 +338,10 @@ function renderFeedList() {
   const filtered = getFilteredFeeds();
   els.feedList.innerHTML = '';
   els.feedListCount.textContent = `${filtered.length} shown`;
-  if (!filtered.length) return (els.feedList.innerHTML = '<div class="hint">No valid feed records for current filter.</div>');
+  if (!filtered.length) return (els.feedList.innerHTML = '<div class="hint">No feed records for this filter.</div>');
   filtered.forEach((feed) => {
     const row = document.createElement('div');
-    row.className = `feed-row ${feed.state === 'excluded' ? 'excluded' : ''} ${feed.state === 'kept' ? 'kept' : ''} ${feed.id === state.session.selectedFeedId ? 'selected' : ''}`;
+    row.className = `feed-row ${feed.state === 'ignored' ? 'excluded' : ''} ${feed.state === 'included' ? 'kept' : ''} ${feed.id === state.session.selectedFeedId ? 'selected' : ''}`;
     row.innerHTML = `
       <input type="checkbox" data-id="${feed.id}" ${state.session.selectedFeedIds.has(feed.id) ? 'checked' : ''} />
       ${iconMarkup(feed.sourceDomain, feed.title, feed.sourceIcon)}
@@ -313,7 +350,8 @@ function renderFeedList() {
         <div class="title clamp-1">${escapeHtml(feed.title)}</div>
         <div class="sub url">${escapeHtml(feed.url)}</div>
       </div>
-      <button class="row-action" data-act="toggle">${feed.state === 'excluded' ? '↺' : '×'}</button>
+      <button class="row-action" data-act="toggle">${feed.state === 'ignored' ? '↺' : '×'}</button>
+      <button class="row-action" data-act="copy">⎘</button>
       <div class="preview"><div class="p-title">${escapeHtml(feed.title)}</div><div class="p-line">Source: ${escapeHtml(feed.sourceDomain)}</div><div class="p-line">Type: ${escapeHtml(feed.format.toUpperCase())} · ${feed.state}</div><div class="p-line">Latest: ${escapeHtml(feed.latestTitle || 'n/a')}</div><div class="p-line">Age: ${escapeHtml(feed.latestAge || 'Unknown time')}</div></div>`;
     row.addEventListener('click', (e) => {
       if (e.target.matches('input,button')) return;
@@ -324,10 +362,15 @@ function renderFeedList() {
     row.querySelector('input').addEventListener('change', (e) => {
       if (e.target.checked) state.session.selectedFeedIds.add(feed.id);
       else state.session.selectedFeedIds.delete(feed.id);
+      updateDiscoverMetrics();
     });
     row.querySelector('[data-act="toggle"]').addEventListener('click', (e) => {
       e.stopPropagation();
-      setFeedState(feed.id, feed.state === 'excluded' ? 'candidate' : 'excluded');
+      setFeedState(feed.id, feed.state === 'ignored' ? 'included' : 'ignored');
+    });
+    row.querySelector('[data-act="copy"]').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await copyText(feed.url, 'Copied 1 feed URL');
     });
     els.feedList.appendChild(row);
   });
@@ -340,13 +383,14 @@ function setVisibleSelection(checked) {
     else state.session.selectedFeedIds.delete(feed.id);
   });
   renderFeedList();
+  updateDiscoverMetrics();
 }
 
 function setFeedState(id, nextState) {
   const feed = state.session.feeds.find((f) => f.id === id);
   if (!feed) return;
   feed.state = nextState;
-  log(nextState === 'excluded' ? 'REJECT' : 'VALID', `${feed.title} set to ${nextState}`, nextState === 'excluded' ? 'warn' : 'ok');
+  log(nextState === 'ignored' ? 'IGNORE' : 'INCLUDE', `${feed.title} set to ${nextState}`, nextState === 'ignored' ? 'warn' : 'ok');
   rebuildReaderData();
   syncReaderSelection();
   renderFeedList();
@@ -360,22 +404,24 @@ function setFeedState(id, nextState) {
 
 function updateDiscoverMetrics() {
   const total = state.session.feeds.length;
-  const kept = state.session.feeds.filter((f) => f.state === 'kept').length;
-  const excluded = state.session.feeds.filter((f) => f.state === 'excluded').length;
-  const candidate = total - kept - excluded;
+  const included = state.session.feeds.filter((f) => f.state === 'included').length;
+  const ignored = state.session.feeds.filter((f) => f.state === 'ignored').length;
+  const selected = state.session.selectedFeedIds.size;
   els.metricDiscovered.textContent = total;
-  els.metricKept.textContent = kept;
-  els.metricExcluded.textContent = excluded;
-  els.discoverSummary.textContent = `${total} total · ${candidate} candidate · ${kept} kept · ${excluded} excluded`;
-  if (state.mode === 'discover') els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Feeds ${total}`;
+  els.metricIncluded.textContent = included;
+  els.metricIgnored.textContent = ignored;
+  els.discoverSummary.textContent = `${total} total · ${included} included · ${ignored} ignored${selected ? ` · ${selected} selected` : ''}`;
+  els.bulkActionBar.classList.toggle('hidden', selected === 0);
+  if (state.mode === 'discover') els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${included}`;
 }
 
 function renderDiscoverInspector() {
   const feed = state.session.feeds.find((f) => f.id === state.session.selectedFeedId);
-  if (!feed) return (els.discoverInspector.innerHTML = '<div class="hint">Select a discovered feed to inspect details.</div>');
-  els.discoverInspector.innerHTML = `<div class="block"><div class="k">Source</div><div class="v">${escapeHtml(feed.sourceDomain)}</div><div class="s mono">${escapeHtml(feed.sourceSeed)}</div></div><div class="block"><div class="k">Feed</div><div class="v">${escapeHtml(feed.title)}</div><div class="s mono">${escapeHtml(feed.url)}</div><div class="s">Format ${escapeHtml(feed.format.toUpperCase())} · State ${feed.state}</div></div><div class="block"><div class="k">Latest item</div><div class="v">${escapeHtml(feed.latestTitle || 'No item title')}</div><div class="s mono">${escapeHtml(feed.latestUrl || 'No article URL')}</div><div class="s">Published ${escapeHtml(feed.latestAge || 'Unknown time')}</div></div><div class="row2"><button class="btn micro" id="insKeep">Keep</button><button class="btn micro danger" id="insExclude">Exclude</button></div><div class="row2"><button class="btn micro" id="insOpenFeed">Open feed</button><button class="btn micro" id="insOpenArticle" ${feed.latestUrl ? '' : 'disabled'}>Open latest</button></div>`;
-  document.getElementById('insKeep').addEventListener('click', () => setFeedState(feed.id, 'kept'));
-  document.getElementById('insExclude').addEventListener('click', () => setFeedState(feed.id, 'excluded'));
+  if (!feed) return (els.discoverInspector.innerHTML = '<div class="hint">Select a feed to inspect details.</div>');
+  const lastUpdated = feed.latestAt ? new Date(feed.latestAt).toLocaleString() : 'Unknown';
+  els.discoverInspector.innerHTML = `<div class="block"><div class="k">Feed title</div><div class="v">${escapeHtml(feed.title)}</div></div><div class="block"><div class="k">Domain</div><div class="s">${escapeHtml(feed.sourceDomain || 'Unknown')}</div><div class="k">Feed URL</div><div class="s mono">${escapeHtml(feed.url)}</div><div class="k">Site URL</div><div class="s mono">${escapeHtml(feed.sourceHome || feed.sourceSeed || 'Unknown')}</div></div><div class="block"><div class="k">Latest item</div><div class="v">${escapeHtml(feed.latestTitle || 'No item title')}</div><div class="s mono">${escapeHtml(feed.latestUrl || 'No article URL')}</div><div class="s">Last updated ${escapeHtml(lastUpdated)}</div></div><div class="block"><div class="k">Discovered via</div><div class="s">${escapeHtml(feed.discoveredVia || 'scan')}</div><div class="k">Format</div><div class="s">${escapeHtml(feed.format.toUpperCase())}</div></div><div class="row2"><button class="btn micro" id="insToggle">${feed.state === 'included' ? 'Ignore' : 'Include'}</button><button class="btn micro" id="insCopy">Copy URL</button></div><div class="row2"><button class="btn micro" id="insOpenFeed">Open feed</button><button class="btn micro" id="insOpenArticle" ${feed.latestUrl ? '' : 'disabled'}>Open latest</button></div>`;
+  document.getElementById('insToggle').addEventListener('click', () => setFeedState(feed.id, feed.state === 'included' ? 'ignored' : 'included'));
+  document.getElementById('insCopy').addEventListener('click', () => copyText(feed.url, 'Copied 1 feed URL'));
   document.getElementById('insOpenFeed').addEventListener('click', () => window.open(feed.url, '_blank', 'noopener'));
   document.getElementById('insOpenArticle').addEventListener('click', () => feed.latestUrl && window.open(feed.latestUrl, '_blank', 'noopener'));
 }
@@ -392,18 +438,18 @@ function getFilteredHeadlines() {
 }
 
 function updateReaderScopeSummary() {
-  const activeSources = state.session.feeds.filter((f) => f.state === 'kept').length;
+  const activeSources = state.session.feeds.filter((f) => f.state === 'included' && feedPassesFreshness(f)).length;
   const visibleStories = getFilteredHeadlines().length;
-  els.readerScopeSources.textContent = `${activeSources} active ${activeSources === 1 ? 'source' : 'sources'}`;
-  els.readerScopeStories.textContent = `${visibleStories} visible ${visibleStories === 1 ? 'story' : 'stories'}`;
+  els.readerScopeSources.textContent = `${activeSources} included ${activeSources === 1 ? 'feed' : 'feeds'}`;
+  els.readerScopeStories.textContent = `${visibleStories} visible ${visibleStories === 1 ? 'article' : 'articles'}`;
 }
 
 function renderPackList() {
   const sources = getFilteredSources();
-  const kept = state.session.feeds.filter((f) => f.state === 'kept').length;
+  const included = state.session.feeds.filter((f) => f.state === 'included' && feedPassesFreshness(f)).length;
   els.packList.innerHTML = '';
-  els.packCount.textContent = `${kept} active sources`;
-  els.packSummary.textContent = kept ? `Kept feeds ${kept}` : 'No active Reader feeds yet. Keep feeds in Discover.';
+  els.packCount.textContent = `${included} included feeds`;
+  els.packSummary.textContent = included ? `Included feeds ${included}` : 'No included feeds yet. Find feeds first.';
   if (!sources.length) {
     updateReaderScopeSummary();
     return (els.packList.innerHTML = '<div class="hint">No source rows match search.</div>');
@@ -430,34 +476,28 @@ function renderHeadlineList() {
   els.headlineList.innerHTML = '';
   els.headlineCount.textContent = `${rows.length} shown`;
   els.headlineSummary.textContent = `Range ${state.reader.rangeHours}h · Source ${state.reader.selectedSourceId} · Loaded ${state.reader.stories.length}`;
-  if (!state.session.feeds.some((f) => f.state === 'kept')) {
+  if (!state.session.feeds.some((f) => f.state === 'included')) {
     updateReaderScopeSummary();
-    return (els.headlineList.innerHTML = '<div class="hint">No active Reader feeds yet. Keep feeds in Discover.</div>');
+    return (els.headlineList.innerHTML = '<div class="hint">No included feeds yet. Include feeds in Discover.</div>');
   }
   if (!state.reader.stories.length) {
     updateReaderScopeSummary();
-    return (els.headlineList.innerHTML = '<div class="hint">No readable items were loaded from active feeds.</div>');
+    return (els.headlineList.innerHTML = '<div class="hint">No readable items were loaded from included feeds.</div>');
   }
   if (!rows.length) {
     updateReaderScopeSummary();
-    return (els.headlineList.innerHTML = '<div class="hint">No stories match source/search/range filters.</div>');
+    return (els.headlineList.innerHTML = '<div class="hint">No articles match source/search/range filters.</div>');
   }
   rows.forEach((st) => {
     const row = document.createElement('div');
     row.className = `headline-row ${state.reader.selectedHeadlineId === st.id ? 'selected' : ''}`;
     row.tabIndex = 0;
-    row.innerHTML = `<div class="headline-main"><div class="headline-meta"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><span class="mono quiet story-time">${escapeHtml(formatStoryTime(st.publishedAt))}</span></div><a class="title clamp-2 headline-link" dir="auto" href="${escapeHtml(st.url)}" target="_blank" rel="noopener" title="Open article">${escapeHtml(st.title)}</a><div class="sub clamp-1" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><span class="badge age">${formatAge(st.publishedAt)}</span><div class="preview"><div class="p-title">${escapeHtml(st.title)}</div><div class="p-line">Source: ${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="p-line">Published: ${escapeHtml(formatStoryTime(st.publishedAt))}</div><div class="p-line">${escapeHtml((st.excerpt || 'No excerpt').slice(0, 120))}</div><div class="p-line mono">${escapeHtml(st.url)}</div></div>`;
+    row.innerHTML = `<div class="headline-main"><div class="headline-meta"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><span class="mono quiet story-time">${escapeHtml(formatStoryTime(st.publishedAt))}</span></div><a class="title clamp-2 headline-link" dir="auto" href="${escapeHtml(st.url)}" target="_blank" rel="noopener" title="Open article">${escapeHtml(st.title)}</a><div class="sub clamp-1" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><span class="badge age">${formatAge(st.publishedAt)}</span>`;
     row.addEventListener('click', () => {
       state.reader.selectedHeadlineId = st.id;
       renderHeadlineList();
       renderStoryInspector();
       refreshReaderStatus();
-    });
-    row.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && state.reader.selectedHeadlineId === st.id) {
-        e.preventDefault();
-        window.open(st.url, '_blank', 'noopener');
-      }
     });
     row.querySelector('.headline-link').addEventListener('click', (e) => e.stopPropagation());
     els.headlineList.appendChild(row);
@@ -467,7 +507,7 @@ function renderHeadlineList() {
 
 function renderStoryInspector() {
   const st = state.reader.stories.find((s) => s.id === state.reader.selectedHeadlineId);
-  if (!st) return (els.storyInspector.innerHTML = '<div class="hint">Select a headline row to inspect story details.</div>');
+  if (!st) return (els.storyInspector.innerHTML = '<div class="hint">Select an article to inspect details.</div>');
   els.storyInspector.innerHTML = `<div class="block"><div class="k">Story</div><div class="v">${escapeHtml(st.title)}</div><div class="s mono">${escapeHtml(st.url)}</div></div><div class="block"><div class="k">Source</div><div class="s">${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="s mono">${escapeHtml(st.feedUrl)}</div><div class="s">Published ${escapeHtml(formatStoryTime(st.publishedAt))}</div></div><div class="block"><div class="k">Excerpt</div><div class="s">${escapeHtml(st.excerpt || 'No excerpt available.')}</div></div><div class="row2"><button class="btn micro" id="openStoryBtn">Open article</button><button class="btn micro" id="openStoryFeedBtn">Open source feed</button></div>`;
   document.getElementById('openStoryBtn').addEventListener('click', () => window.open(st.url, '_blank', 'noopener'));
   document.getElementById('openStoryFeedBtn').addEventListener('click', () => window.open(st.feedUrl, '_blank', 'noopener'));
@@ -479,7 +519,7 @@ function batchSetSelected(nextState) {
     const feed = state.session.feeds.find((f) => f.id === id);
     if (feed) feed.state = nextState;
   });
-  log(nextState === 'excluded' ? 'REJECT' : 'VALID', `${state.session.selectedFeedIds.size} selected feeds set to ${nextState}`, nextState === 'excluded' ? 'warn' : 'ok');
+  log(nextState === 'ignored' ? 'IGNORE' : 'INCLUDE', `${state.session.selectedFeedIds.size} selected feeds set to ${nextState}`, nextState === 'ignored' ? 'warn' : 'ok');
   rebuildReaderData();
   syncReaderSelection();
   renderFeedList();
@@ -500,19 +540,20 @@ function syncReaderSelection() {
 function refreshReaderStatus() {
   if (state.mode !== 'reader') return;
   const visible = getFilteredHeadlines().length;
-  els.toolbarContext.textContent = `Loading ${state.session.feeds.filter((f) => f.state === 'kept').length} active feeds`;
-  els.toolbarSecondary.textContent = `${visible} visible stories`;
-  els.statusLeft.textContent = 'READER · Active';
+  const included = getIncludedFeeds().length;
+  els.toolbarContext.textContent = `Previewing ${included} included feeds`;
+  els.toolbarSecondary.textContent = `${visible} visible articles`;
+  els.statusLeft.textContent = 'PREVIEW · Active';
   els.statusRight.textContent = `Loaded ${state.reader.stories.length} · Range ${state.reader.rangeHours}h`;
   updateReaderScopeSummary();
 }
 
 async function refreshReaderItemsFromBackend() {
-  const keptFeeds = state.session.feeds.filter((f) => f.state === 'kept');
-  if (!keptFeeds.length) return;
-  log('READER', 'Loading reader items via local backend', 'ok');
+  const includedFeeds = getIncludedFeeds().filter(feedPassesFreshness);
+  if (!includedFeeds.length) return;
+  log('READER', 'Loading latest articles via local backend', 'ok');
   const payload = await apiPost('/api/reader-items', {
-    feeds: keptFeeds.map((f) => ({ id: f.id, title: f.title, sourceDomain: f.sourceDomain, sourceSeed: f.sourceSeed, url: f.url }))
+    feeds: includedFeeds.map((f) => ({ id: f.id, title: f.title, sourceDomain: f.sourceDomain, sourceSeed: f.sourceSeed, url: f.url }))
   });
   (payload.logs || []).forEach((row) => log(row.code || 'READER', row.message || '', row.level === 'warn' ? 'warn' : row.level === 'error' ? 'err' : 'ok'));
   const itemsByFeed = new Map();
@@ -522,10 +563,9 @@ async function refreshReaderItemsFromBackend() {
     itemsByFeed.get(next.sourceId).push(next);
   });
   state.session.feeds.forEach((feed) => {
-    if (feed.state !== 'kept') return;
+    if (feed.state !== 'included') return;
     const rows = itemsByFeed.get(feed.id) || [];
     feed.items = rows.map((item) => ({ id: item.id, title: item.title, url: item.url, excerpt: item.excerpt, publishedAt: item.publishedAt, author: item.author }));
-    if (rows[0]?.sourceDomain) feed.sourceDomain = rows[0].sourceDomain;
     const first = feed.items[0];
     if (first) {
       feed.latestTitle = first.title;
@@ -543,24 +583,132 @@ async function refreshReaderItemsFromBackend() {
   refreshReaderStatus();
 }
 
+function xmlEscape(value) {
+  return String(value || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
+
+function buildOpml(feeds) {
+  const outlines = feeds.map((feed) => `    <outline text="${xmlEscape(feed.title)}" title="${xmlEscape(feed.title)}" type="rss" xmlUrl="${xmlEscape(feed.url)}" htmlUrl="${xmlEscape(feed.sourceHome || feed.sourceSeed || '')}" />`).join('\n');
+  const now = new Date().toUTCString();
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<opml version="1.0">\n  <head>\n    <title>RSS Discovery Included Feeds</title>\n    <dateCreated>${xmlEscape(now)}</dateCreated>\n    <ownerName>RSS Discovery</ownerName>\n  </head>\n  <body>\n${outlines}\n  </body>\n</opml>\n`;
+}
+
+function csvCell(value) {
+  const raw = String(value ?? '');
+  return `"${raw.replaceAll('"', '""')}"`;
+}
+
+function buildCsv(feeds) {
+  const header = 'title,feedUrl,siteUrl,domain,format,latestTitle,latestAt,discoveredVia';
+  const rows = feeds.map((feed) => [
+    feed.title,
+    feed.url,
+    feed.sourceHome || feed.sourceSeed || '',
+    feed.sourceDomain,
+    feed.format,
+    feed.latestTitle,
+    feed.latestAt ? new Date(feed.latestAt).toISOString() : '',
+    feed.discoveredVia || 'scan'
+  ].map(csvCell).join(','));
+  return `${header}\n${rows.join('\n')}\n`;
+}
+
+function buildJson(feeds) {
+  return JSON.stringify(feeds.map((feed) => ({
+    title: feed.title,
+    feedUrl: feed.url,
+    siteUrl: feed.sourceHome || feed.sourceSeed || '',
+    domain: feed.sourceDomain,
+    format: feed.format,
+    latestTitle: feed.latestTitle,
+    latestAt: feed.latestAt ? new Date(feed.latestAt).toISOString() : null,
+    discoveredVia: feed.discoveredVia || 'scan',
+    sourceSeed: feed.sourceSeed || ''
+  })), null, 2);
+}
+
+function downloadText(filename, mime, text) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function copyText(text, successMessage) {
+  try {
+    await navigator.clipboard.writeText(text);
+    log('COPY', successMessage, 'ok');
+    setDiscoverStatus('Ready', successMessage);
+  } catch {
+    log('ERROR', 'Clipboard copy failed in this browser context', 'err');
+  }
+}
+
+async function copyIncludedUrls() {
+  const feeds = getIncludedFeeds().filter(feedPassesFreshness);
+  if (!feeds.length) {
+    log('EXPORT', 'No included feeds to export.', 'warn');
+    setDiscoverStatus('Ready', 'No included feeds to export.');
+    return;
+  }
+  const text = feeds.map((f) => f.url).join('\n');
+  await copyText(text, `Copied ${feeds.length} feed URLs`);
+}
+
+function exportIncluded(kind) {
+  const feeds = getIncludedFeeds().filter(feedPassesFreshness);
+  if (!feeds.length) {
+    log('EXPORT', 'No included feeds to export.', 'warn');
+    setDiscoverStatus('Ready', 'No included feeds to export.');
+    return;
+  }
+
+  if (kind === 'opml') {
+    downloadText('rss-discovery-feeds.opml', 'text/x-opml;charset=utf-8', buildOpml(feeds));
+  } else if (kind === 'csv') {
+    downloadText('rss-discovery-feeds.csv', 'text/csv;charset=utf-8', buildCsv(feeds));
+  } else if (kind === 'json') {
+    downloadText('rss-discovery-feeds.json', 'application/json;charset=utf-8', buildJson(feeds));
+  }
+  log('EXPORT', `Exported ${feeds.length} included feeds as ${kind.toUpperCase()}`, 'ok');
+}
+
 async function runDiscoverySession(seeds) {
   clearSession();
   state.session.runId += 1;
   state.session.running = true;
   state.session.stopped = false;
   state.session.seeds = seeds.length;
-  setDiscoverStatus('Scanning seed page', `Seeds ${seeds.length} · Feeds 0`);
-  log('RUN', `Discovery session started for ${seeds.length} seed(s)`, 'ok');
+  state.session.scanMode = els.scanModeSelect.value || 'standard';
+  state.session.freshnessDays = els.freshnessSelect.value ? Number(els.freshnessSelect.value) : null;
+  setDiscoverStatus('Finding feeds', `Seeds ${seeds.length} · Included 0`);
+  log('RUN', `Discovery session started for ${seeds.length} website(s)`, 'ok');
 
   const feedByUrl = new Map();
   let validated = 0;
   let total = 0;
 
+  // Frontend abort closes the stream request cleanly; backend may continue processing briefly.
+  state.session.streamController = new AbortController();
+
   try {
     const res = await fetch('/api/discover-stream', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ seeds })
+      body: JSON.stringify({
+        seeds,
+        scanMode: state.session.scanMode,
+        freshnessDays: state.session.freshnessDays
+      }),
+      signal: state.session.streamController.signal
     });
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
@@ -593,20 +741,16 @@ async function runDiscoverySession(seeds) {
             renderFeedList();
             renderDiscoverInspector();
             updateDiscoverMetrics();
-            renderPackList();
-            renderHeadlineList();
-            renderStoryInspector();
           }
         } else if (event.type === 'progress') {
           if (event.stage === 'scanning-seed') {
-            setDiscoverStatus('Scanning seed page', `${event.seed || ''}`);
+            setDiscoverStatus(`Scanning ${state.session.scanMode}`, `${event.seed || ''}`);
           } else if (event.stage === 'candidates-recovered') {
-            const detected = Number(event.detected || 0);
-            setDiscoverStatus(`Recovered ${detected} candidates`, `Feeds ${state.session.feeds.length}`);
+            setDiscoverStatus('Checking discovered links', `Included ${getIncludedFeeds().length}`);
           } else if (event.stage === 'validating') {
             validated = Number(event.validated || validated);
             total = Number(event.total || total || validated);
-            setDiscoverStatus(`Validating ${validated}/${Math.max(total, validated)}`, `${state.session.feeds.length} real feeds found`);
+            setDiscoverStatus(`Validating ${validated}/${Math.max(total, validated)}`, `${getIncludedFeeds().length} included`);
           }
         } else if (event.type === 'error') {
           throw new Error(event.error || 'discover-stream-failed');
@@ -614,17 +758,22 @@ async function runDiscoverySession(seeds) {
       });
     }
   } catch (err) {
-    log('ERROR', `Discovery failed ${String(err?.message || err)}`, 'err');
+    if (String(err?.name || '') === 'AbortError') {
+      log('STOP', 'Scan stopped by user request', 'warn');
+    } else {
+      log('ERROR', `Discovery failed ${String(err?.message || err)}`, 'err');
+    }
   }
 
   state.session.running = false;
+  state.session.streamController = null;
   if (!state.session.feeds.length) {
     log('DONE', 'No valid feed records found', 'warn');
     setDiscoverStatus('Complete', '0 feeds discovered');
   } else {
     state.session.feeds.sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0) || a.title.localeCompare(b.title));
     log('DONE', `${state.session.feeds.length} valid feeds discovered`, 'ok');
-    setDiscoverStatus('Complete', `${state.session.feeds.length} feeds discovered`);
+    setDiscoverStatus('Complete', `${getIncludedFeeds().length} included feeds ready`);
   }
   rebuildReaderData();
   renderFeedList();
@@ -645,10 +794,10 @@ function setMode(mode) {
   els.readerPane.classList.toggle('active', !isDiscover);
   els.discoverActions.classList.toggle('hidden', !isDiscover);
   els.readerActions.classList.toggle('hidden', isDiscover);
-  els.toolbarMode.textContent = isDiscover ? 'Discover' : 'Reader';
+  els.toolbarMode.textContent = isDiscover ? 'Discover' : 'Preview latest articles';
   if (isDiscover) {
     els.toolbarContext.textContent = state.session.running ? 'Running' : (state.session.feeds.length ? 'Complete' : 'Idle');
-    els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Feeds ${state.session.feeds.length}`;
+    els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${getIncludedFeeds().length}`;
     els.statusLeft.textContent = `DISCOVER · ${els.toolbarContext.textContent}`;
     els.statusRight.textContent = els.toolbarSecondary.textContent;
   } else {
@@ -661,21 +810,22 @@ function bindEvents() {
   els.navButtons.forEach((btn) => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
   els.startBtn.addEventListener('click', async () => {
     const seeds = parseSeeds(els.seedInput.value);
-    if (!seeds.length) return log('REJECT', 'No seed URLs provided. Session not started.', 'err');
+    if (!seeds.length) return log('REJECT', 'No websites provided. Scan not started.', 'err');
     await runDiscoverySession(seeds);
   });
   els.stopBtn.addEventListener('click', () => {
     state.session.running = false;
     state.session.stopped = true;
-    log('STOP', 'Stop acknowledged. Current backend request cannot be aborted.', 'warn');
+    if (state.session.streamController) state.session.streamController.abort();
+    log('STOP', 'Stop requested. Stream closed for this session.', 'warn');
     setDiscoverStatus('Stopped', 'Session interrupted');
   });
   els.clearBtn.addEventListener('click', clearSession);
-  els.keepSelectedBtn.addEventListener('click', () => batchSetSelected('kept'));
-  els.excludeSelectedBtn.addEventListener('click', () => batchSetSelected('excluded'));
+  els.includeSelectedBtn.addEventListener('click', () => batchSetSelected('included'));
+  els.ignoreSelectedBtn.addEventListener('click', () => batchSetSelected('ignored'));
   els.openReaderBtn.addEventListener('click', async () => {
-    const kept = state.session.feeds.filter((f) => f.state === 'kept').length;
-    log('RUN', kept ? `Open Reader with ${kept} kept feed(s)` : 'Open Reader with no kept feeds', kept ? 'ok' : 'warn');
+    const included = getIncludedFeeds().length;
+    log('RUN', included ? `Preview latest articles from ${included} included feed(s)` : 'Preview latest articles with no included feeds', included ? 'ok' : 'warn');
     setMode('reader');
     try {
       await refreshReaderItemsFromBackend();
@@ -684,12 +834,25 @@ function bindEvents() {
     }
   });
   els.backDiscoverBtn.addEventListener('click', () => setMode('discover'));
-  [els.discoverFilter, els.discoverSearch].forEach((el) => el.addEventListener('input', () => {
+  [els.discoverFilter, els.discoverSearch, els.freshnessSelect].forEach((el) => el.addEventListener('input', () => {
+    state.session.freshnessDays = els.freshnessSelect.value ? Number(els.freshnessSelect.value) : null;
+    rebuildReaderData();
     renderFeedList();
     renderDiscoverInspector();
+    updateDiscoverMetrics();
   }));
   els.selectVisibleBtn.addEventListener('click', () => setVisibleSelection(true));
   els.clearVisibleBtn.addEventListener('click', () => setVisibleSelection(false));
+
+  els.exportBtn.addEventListener('click', () => els.exportMenu.classList.toggle('open'));
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.export-group')) els.exportMenu.classList.remove('open');
+  });
+  els.exportOpmlBtn.addEventListener('click', () => exportIncluded('opml'));
+  els.copyUrlsBtn.addEventListener('click', () => copyIncludedUrls());
+  els.exportCsvBtn.addEventListener('click', () => exportIncluded('csv'));
+  els.exportJsonBtn.addEventListener('click', () => exportIncluded('json'));
+
   els.readerSourceSearch.addEventListener('input', () => {
     state.reader.sourceSearch = els.readerSourceSearch.value.trim();
     renderPackList();
@@ -716,16 +879,6 @@ function init() {
   clearSession();
   setMode('discover');
   log('RUNTIME', 'Discovery transport: local backend /api/discover-stream', 'ok');
-
-  document.addEventListener('keydown', (e) => {
-    if (state.mode !== 'reader' || e.key !== 'Enter') return;
-    const st = state.reader.stories.find((s) => s.id === state.reader.selectedHeadlineId);
-    if (!st?.url) return;
-    const target = e.target;
-    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-    e.preventDefault();
-    window.open(st.url, '_blank', 'noopener');
-  });
 }
 
 init();
