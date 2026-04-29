@@ -20,13 +20,13 @@
       <div class="mode-panel active" data-panel="discover">
         <div class="sidebar-panel stack discover-controls">
           <div class="control-field">
-            <div class="field-label">Websites to scan</div>
+            <div class="field-label">Websites / feed URLs</div>
             <textarea id="seedInput" placeholder="https://example.com&#10;https://news.example.org"></textarea>
             <div class="tiny">Use newline, comma, or space-separated URLs.</div>
           </div>
 
           <div class="control-field compact-field">
-            <div class="field-label">Scan depth</div>
+            <div class="field-label">Scan mode</div>
             <select id="scanModeSelect">
               <option value="quick">Quick scan</option>
               <option value="standard" selected>Standard scan</option>
@@ -37,7 +37,7 @@
           <button class="btn primary" id="startBtn">Find feeds</button>
           <div class="row2">
             <button class="btn" id="stopBtn">Stop</button>
-            <button class="btn ghost" id="clearBtn">Clear</button>
+            <button class="btn ghost" id="clearBtn">Reset</button>
           </div>
           <div class="tiny mono" id="discoverSummary">0 found · 0 included</div>
         </div>
@@ -45,17 +45,16 @@
 
       <div class="mode-panel" data-panel="reader">
         <div class="sidebar-panel reader-controls stack">
-          <div class="label">Latest articles filters</div>
           <div class="control-field">
-            <div class="field-label">Included feeds filter</div>
-            <input id="readerSourceSearch" placeholder="Search included feeds" />
+            <div class="field-label">Search sources</div>
+            <input id="readerSourceSearch" placeholder="Search sources" />
           </div>
           <div class="control-field">
-            <div class="field-label">Article filter</div>
+            <div class="field-label">Search articles</div>
             <input id="headlineSearch" placeholder="Search title/excerpt" />
           </div>
           <div class="control-field">
-            <div class="field-label">Range</div>
+            <div class="field-label">Time range</div>
             <select id="rangeSelect">
               <option value="6">Last 6h</option>
               <option value="24" selected>Last 24h</option>
@@ -66,7 +65,7 @@
         </div>
 
         <div class="sidebar-panel reader-scope tiny mono" id="readerScopeSummary">
-          <span id="readerScopeSources">0 included feeds</span>
+          <span id="readerScopeSources">0 sources</span>
           <span class="scope-dot">·</span>
           <span id="readerScopeStories">0 visible articles</span>
         </div>
@@ -83,8 +82,7 @@
           <span class="mono" id="toolbarSecondary">Session ready</span>
         </div>
         <div class="toolbar-right" id="discoverActions">
-          <button class="btn micro" id="openReaderBtn">Preview</button>
-          <button class="btn micro ghost" id="openLogBtn">Log</button>
+
         </div>
         <div class="toolbar-right hidden" id="readerActions">
           <button class="btn micro" id="backDiscoverBtn">Back to Discover</button>
@@ -93,12 +91,12 @@
 
       <section class="workspace discover-layout active" id="discoverPane">
         <section class="pane results-pane">
-          <div class="pane-head"><div class="pane-title">Results</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
+          <div class="pane-head"><div class="pane-title">Feeds found</div><div class="pane-meta mono" id="feedListCount">0 shown</div></div>
           <div class="pane-toolbar">
             <div class="toolbar-inline discover-toolbar">
               <input id="discoverSearch" placeholder="Search title, domain, or feed URL" />
               <select id="discoverFilter">
-                <option value="all">All activity</option>
+                <option value="all">All feeds</option>
                 <option value="30">Active in 30 days</option>
                 <option value="90">Active in 90 days</option>
                 <option value="365">Active in 1 year</option>
@@ -107,7 +105,7 @@
               </select>
               <div class="results-toolbar-actions">
                 <div class="export-group">
-                  <button class="btn micro" id="exportBtn">Export included ▾</button>
+                  <button class="btn micro" id="exportBtn">Export ▾</button>
                   <div class="export-menu" id="exportMenu">
                     <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
                     <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
@@ -126,8 +124,8 @@
 
       <section class="workspace reader-layout" id="readerPane">
         <section class="pane">
-          <div class="pane-head"><div class="pane-title">Included feeds</div><div class="pane-meta mono" id="packCount">0 sources</div></div>
-          <div class="pane-toolbar"><div class="tiny" id="packSummary">Included feeds for preview</div></div>
+          <div class="pane-head"><div class="pane-title">Sources</div><div class="pane-meta mono" id="packCount">0 sources</div></div>
+          <div class="pane-toolbar"><div class="tiny" id="packSummary">All sources</div></div>
           <div class="pane-body pack-list" id="packList"></div>
         </section>
 
@@ -138,7 +136,7 @@
         </section>
 
         <aside class="pane no-toolbar story-pane">
-          <div class="pane-head"><div class="pane-title">Story details</div></div>
+          <div class="pane-head"><div class="pane-title">Article details</div></div>
           <div class="pane-body inspector" id="storyInspector"></div>
         </aside>
       </section>
