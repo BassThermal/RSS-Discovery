@@ -293,11 +293,25 @@ function hasFeedIntent(context = {}, rawUrl = '') {
 function isFeedspotDirectory(url) {
   try {
     const u = new URL(url);
-    return u.hostname.toLowerCase() === 'rss.feedspot.com' && /_rss_feeds\/?$/i.test(u.pathname);
+    const host = u.hostname.toLowerCase();
+    const path = (u.pathname || '').toLowerCase();
+    const hostMatch = host === 'feedspot.com' || host === 'rss.feedspot.com' || host.endsWith('.feedspot.com');
+    const pathMatch = /(_rss_feeds|rss_feeds|rss-feeds|rss-feed|top-rss|\/rss\/|\/feed\/)/i.test(path);
+    return hostMatch && pathMatch;
   } catch {
     return false;
   }
 }
+function decodeHtmlEntities(value) {
+  if (!value) return '';
+  return String(value)
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#x27;|&#39;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
+}
+
 function rejectCandidate(rawUrl, context = {}) {
   try {
     const url = new URL(rawUrl);
@@ -393,7 +407,81 @@ function extractCandidates(html, pageUrl) {
   return { found, stats };
 }
 
+function extractFeedspotDirectoryCandidates(html, pageUrl) {
+  const $ = cheerio.load(html);
+  const rows = [];
+  const seen = new Set();
+  const dataAttrs = ['data-url', 'data-href', 'data-feed', 'data-rss', 'data-source', 'data-target', 'data-link'];
+  const stats = { linkRel: 0, anchors: 0, dataAttrs: 0, rawUrls: 0, wrapperUnwrapped: 0, rawTargets: 0, keptFeedLike: 0 };
+
+  function addRawTarget(raw, kind) {
+    if (!raw) return;
+    stats.rawTargets += 1;
+    const decoded = decodeHtmlEntities(String(raw).replace(/\\\//g, '/'));
+    const variants = [decoded];
+    try {
+      variants.push(decodeURIComponent(decoded));
+    } catch {}
+
+    for (const v of variants) {
+      const matched = v.match(/https?:\/\/[^\s"'<>\\)]+/i);
+      const candidateRaw = matched ? matched[0] : v;
+      const normalized = normalizeUrl(candidateRaw, pageUrl);
+      if (!normalized) continue;
+      const unwrapped = unwrapKnownWrapper(normalized);
+      const finalUrl = unwrapped.canonical || normalized;
+      if (seen.has(finalUrl)) continue;
+      seen.add(finalUrl);
+      const feedLike = isFeedLikeUrl(finalUrl);
+      if (feedLike) stats.keptFeedLike += 1;
+      if (unwrapped.wrapped && unwrapped.canonical) stats.wrapperUnwrapped += 1;
+      rows.push({
+        url: finalUrl,
+        wrappedUrl: unwrapped.wrapped || '',
+        kind: 'feedspot-directory',
+        wrapperAction: unwrapped.wrapped && unwrapped.canonical ? 'unwrapped' : '',
+        feedLike
+      });
+    }
+  }
+
+  $('link[rel]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    if (!href) return;
+    stats.linkRel += 1;
+    addRawTarget(href, 'link-rel');
+  });
+  $('a[href]').each((_, el) => {
+    const href = $(el).attr('href') || '';
+    if (!href) return;
+    stats.anchors += 1;
+    addRawTarget(href, 'anchor');
+  });
+  $('*').each((_, el) => {
+    const node = $(el);
+    dataAttrs.forEach((attr) => {
+      const val = node.attr(attr);
+      if (!val) return;
+      stats.dataAttrs += 1;
+      addRawTarget(val, 'data-attr');
+    });
+    ['href', 'src', 'onclick'].forEach((attr) => {
+      const val = node.attr(attr);
+      if (!val) return;
+      addRawTarget(val, 'attr');
+    });
+  });
+
+  const rawMatches = decodeHtmlEntities(String(html || '').replace(/\\\//g, '/')).match(/https?:\/\/[^\s"'<>\\)]+/g) || [];
+  stats.rawUrls = rawMatches.length;
+  rawMatches.forEach((m) => addRawTarget(m, 'raw'));
+
+  return { found: rows, stats };
+}
+
 async function collectCandidatesFromSeed(seed, scanConfig, emit, emitProgress) {
+  // Scan mode controls crawl breadth; extraction adapters (like Feedspot) are separate.
+  // Feedspot directories are primarily solved via adapter extraction, not by deeper crawl.
   const seedHost = getDomain(seed);
   const seedRoot = rootDomain(seedHost);
   const queue = [{ url: seed, depth: 0 }];
@@ -417,18 +505,60 @@ async function collectCandidatesFromSeed(seed, scanConfig, emit, emitProgress) {
       continue;
     }
 
-    if (!isLikelyHtmlDocument(page.text, page.contentType)) {
+    const isHtml = isLikelyHtmlDocument(page.text, page.contentType);
+    emit({ code: 'DIAG', level: 'ok', message: `fetched ${current.url} content-type=${page.contentType || 'unknown'} bytes=${Buffer.byteLength(page.text || '', 'utf8')} html=${isHtml ? 'yes' : 'no'}` });
+    if (!isHtml) {
       emit({ code: 'SKIP', level: 'warn', message: `non-html page ${current.url}` });
       continue;
     }
 
     pagesScanned.push(current.url);
-    const { found, stats } = extractCandidates(page.text, current.url);
+    const genericResult = extractCandidates(page.text, current.url);
+    let found = genericResult.found;
+    const genericStats = genericResult.stats;
+    const rejectedByReason = {};
+    genericResult.found.forEach((row) => {
+      if (row.rejectedBy) rejectedByReason[row.rejectedBy] = (rejectedByReason[row.rejectedBy] || 0) + 1;
+    });
+
+    const feedspotPage = isFeedspotDirectory(current.url);
+    if (feedspotPage) {
+      emit({ code: 'FEEDSPOT', level: 'ok', message: `directory detected ${current.url}` });
+      const feedspotResult = extractFeedspotDirectoryCandidates(page.text, current.url);
+      emit({ code: 'FEEDSPOT', level: 'ok', message: `raw targets ${feedspotResult.stats.rawTargets} · kept feed-like ${feedspotResult.stats.keptFeedLike}` });
+      const merged = [...feedspotResult.found, ...genericResult.found];
+      const deduped = [];
+      const seenMerged = new Set();
+      merged.forEach((row) => {
+        if (seenMerged.has(row.url)) return;
+        seenMerged.add(row.url);
+        deduped.push(row);
+      });
+
+      const prioritized = deduped.sort((a, b) => {
+        const score = (row) => (row.kind === 'feedspot-directory' ? 3 : row.kind === 'link-rel' ? 2 : 1) + (isFeedLikeUrl(row.url) ? 2 : 0);
+        return score(b) - score(a);
+      });
+
+      const feedLikeCount = prioritized.filter((row) => isFeedLikeUrl(row.url) && !row.rejectedBy).length;
+      if (feedLikeCount > 0 && scanConfig.mode !== 'deep') {
+        found = prioritized.filter((row) => isFeedLikeUrl(row.url) || row.kind === 'link-rel');
+      } else {
+        if (feedLikeCount === 0) emit({ code: 'FEEDSPOT', level: 'warn', message: 'no feed-like candidates found; falling back to generic anchors' });
+        found = prioritized;
+      }
+      emit({ code: 'EXTRACT', level: 'ok', message: `link-rel ${feedspotResult.stats.linkRel} · anchors ${feedspotResult.stats.anchors} · data ${feedspotResult.stats.dataAttrs} · raw ${feedspotResult.stats.rawUrls}` });
+    } else {
+      found = genericResult.found;
+      emit({ code: 'EXTRACT', level: 'ok', message: `link-rel n/a · anchors n/a · data 0 · raw 0` });
+    }
     extractedRows.push(...found);
 
-    emit({ code: 'DETECT', level: 'ok', message: `${current.url} recovered ${stats.detected} candidates (${stats.skipped} skipped early)` });
+    emit({ code: 'DETECT', level: 'ok', message: `${current.url} recovered ${genericStats.detected} candidates (${genericStats.skipped} skipped early)` });
+    emit({ code: 'CAND', level: 'ok', message: `rejected ${Object.values(rejectedByReason).reduce((a, b) => a + b, 0)} reasons=${Object.keys(rejectedByReason).length}` });
 
     if (current.depth >= scanConfig.maxDepth) continue;
+    if (feedspotPage && scanConfig.mode !== 'deep') continue;
     const internalLinks = extractInternalScanLinks(page.text, current.url, seedRoot, current.depth);
     internalLinks.forEach((link) => {
       if (!visited.has(link) && !queue.some((q) => q.url === link) && queue.length + pagesScanned.length < scanConfig.maxPagesPerSeed * 2) {
@@ -439,6 +569,53 @@ async function collectCandidatesFromSeed(seed, scanConfig, emit, emitProgress) {
 
   return { extracted: extractedRows, pagesScanned };
 }
+
+app.post('/api/debug/discovery', async (req, res) => {
+  try {
+    const seed = normalizeUrl(req.body?.seed);
+    const scanConfig = getScanConfig(req.body?.scanMode);
+    if (!seed) return res.status(400).json({ error: 'Invalid seed' });
+    const out = { seed, scanMode: scanConfig.mode };
+    let page;
+    try {
+      page = await fetchText(seed, { cacheBucket: 'seedFetch' });
+    } catch (err) {
+      return res.json({ ...out, fetched: { ok: false, error: err.message, contentType: '', bytes: 0, html: false }, extraction: {}, validation: { checked: 0, valid: 0, invalid: 0 }, sampleCandidates: [], sampleValidFeeds: [] });
+    }
+    const html = isLikelyHtmlDocument(page.text, page.contentType);
+    const feedspot = isFeedspotDirectory(seed);
+    const generic = html ? extractCandidates(page.text, seed) : { found: [], stats: {} };
+    const feedspotResult = html && feedspot ? extractFeedspotDirectoryCandidates(page.text, seed) : { found: [], stats: { linkRel: 0, anchors: 0, dataAttrs: 0, rawUrls: 0 } };
+    const merged = [...feedspotResult.found, ...generic.found].filter((c) => !c.rejectedBy);
+    const unique = [];
+    const seen = new Set();
+    merged.forEach((c) => { if (!seen.has(c.url)) { seen.add(c.url); unique.push(c); } });
+    const toValidate = unique.slice(0, 200);
+    const results = await mapLimit(toValidate, VALIDATION_CONCURRENCY, async (candidate) => ({ candidate, result: await validateCandidate(seed, candidate, () => {}) }));
+    const valid = results.filter((r) => r.result.ok).map((r) => r.candidate.url);
+    const rejectedByReason = {};
+    generic.found.forEach((row) => { if (row.rejectedBy) rejectedByReason[row.rejectedBy] = (rejectedByReason[row.rejectedBy] || 0) + 1; });
+    return res.json({
+      ...out,
+      fetched: { ok: true, contentType: page.contentType || '', bytes: Buffer.byteLength(page.text || '', 'utf8'), html },
+      extraction: {
+        linkRel: feedspotResult.stats.linkRel || 0,
+        anchors: feedspotResult.stats.anchors || 0,
+        dataAttrs: feedspotResult.stats.dataAttrs || 0,
+        rawUrls: feedspotResult.stats.rawUrls || 0,
+        feedspotCandidates: feedspotResult.found.length,
+        genericCandidates: generic.found.length,
+        rejectedByReason,
+        uniqueCandidates: unique.length
+      },
+      validation: { checked: toValidate.length, valid: valid.length, invalid: toValidate.length - valid.length },
+      sampleCandidates: unique.slice(0, 25),
+      sampleValidFeeds: valid.slice(0, 25)
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message || 'debug-discovery-failed' });
+  }
+});
 
 function normalizeParsedItem(item, feedUrl, idx) {
   const url = normalizeUrl(item.link || item.guid || item.id || '', feedUrl) || feedUrl;
