@@ -250,10 +250,6 @@ body.reader-active .reader-controls select { min-height: var(--h28); }
   min-height: 78px;
   align-items: start;
 }
-.headline-row.active {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
-}
 .headline-content { display: grid; gap: 3px; min-width: 0; }
 .headline-topline {
   display: grid;
