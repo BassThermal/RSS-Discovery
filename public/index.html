@@ -131,7 +131,18 @@
 
         <section class="pane">
           <div class="pane-head"><div class="pane-title">Latest articles</div><div class="pane-meta mono" id="headlineCount">0 shown</div></div>
-          <div class="pane-toolbar"><div class="tiny" id="headlineSummary">Loaded from included feeds</div></div>
+          <div class="pane-toolbar">
+            <div class="toolbar-inline">
+              <div class="tiny" id="headlineSummary">Loaded from included feeds</div>
+              <div class="headline-nav-controls">
+                <button class="btn micro ghost" id="headlineOldestBtn">Oldest</button>
+                <button class="btn micro ghost" id="headlinePrevBtn">Prev</button>
+                <button class="btn micro ghost" id="headlineNextBtn">Next</button>
+                <button class="btn micro ghost" id="headlineLatestBtn">Latest</button>
+                <button class="btn micro ghost" id="headlineAutoBtn">Auto</button>
+              </div>
+            </div>
+          </div>
           <div class="pane-body headline-list" id="headlineList"></div>
         </section>
 
