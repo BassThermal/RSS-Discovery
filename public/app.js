@@ -385,7 +385,7 @@ function renderFeedList() {
   const filtered = getFilteredFeeds();
   els.feedList.innerHTML = '';
   els.feedListCount.textContent = `${filtered.length} shown`;
-  if (!filtered.length) return (els.feedList.innerHTML = '<div class="hint">No feed records for this filter.</div>');
+  if (!filtered.length) return (els.feedList.innerHTML = '<div class="hint">No feeds found. Try Standard/Deep scan or paste a direct RSS URL.</div>');
   filtered.forEach((feed) => {
     const stateLabel = feed.state === 'ignored' ? 'Ignored' : feed.state === 'problem' ? 'Problem' : 'Included';
     const row = document.createElement('div');
@@ -393,24 +393,26 @@ function renderFeedList() {
     const latestText = feed.latestTitle || 'No items detected';
     row.innerHTML = `
       ${iconMarkup(feed.sourceDomain, feed.title, feed.sourceIcon)}
-      <div class="feed-main">
-        <div class="title clamp-1">${escapeHtml(feed.title)}</div>
-        <div class="feed-meta-line">
-          <span class="domain">${escapeHtml(feed.sourceDomain || 'Unknown domain')}</span>
-          <span class="sub url">${escapeHtml(feed.url)}</span>
+      <div class="feed-content">
+        <div class="feed-primary">
+          <div class="feed-identity">
+            <div class="feed-title clamp-1" dir="auto" title="${escapeHtml(feed.title)}">${escapeHtml(feed.title)}</div>
+            <div class="feed-url mono clamp-1" dir="ltr" title="${escapeHtml(feed.url)}">${escapeHtml(feed.url)}</div>
+          </div>
+          <div class="feed-actions">
+            <button class="row-action" data-act="copy">Copy</button>
+            <button class="row-action" data-act="open">Open</button>
+            <button class="row-action" data-act="toggle">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
+            <button class="row-action" data-act="details">Details</button>
+          </div>
         </div>
-        <div class="feed-tertiary">
-          <span class="clamp-1">Latest: ${escapeHtml(latestText)}</span>
+        <div class="feed-secondary">
+          <span class="feed-domain" title="${escapeHtml(feed.sourceDomain || 'Unknown domain')}">${escapeHtml(feed.sourceDomain || 'Unknown domain')}</span>
+          <span class="feed-latest clamp-1" dir="auto" title="${escapeHtml(latestText)}">Latest: ${escapeHtml(latestText)}</span>
           <span class="badge age">${escapeHtml(feed.latestAge || 'Unknown time')}</span>
-          ${feed.state === 'included' ? '' : `<span class="badge state-${feed.state}">${stateLabel}</span>`}
           <span class="badge type">${escapeHtml(feed.format.toUpperCase())}</span>
+          ${feed.state === 'included' ? '' : `<span class="badge state-${feed.state}">${stateLabel}</span>`}
         </div>
-      </div>
-      <div class="row-actions">
-        <button class="row-action" data-act="copy">Copy</button>
-        <button class="row-action" data-act="open">Open</button>
-        <button class="row-action" data-act="toggle">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
-        <button class="row-action" data-act="details">Details</button>
       </div>
     `;
     row.classList.toggle('selection-enabled', state.session.selectionMode);
@@ -767,7 +769,7 @@ async function runDiscoverySession(seeds) {
   log('RUN', 'Find feeds clicked', 'ok');
   els.toolbarContext.textContent = 'Starting';
   els.toolbarSecondary.textContent = 'Reading input…';
-  els.feedList.innerHTML = '<div class="hint">Scanning…</div>';
+  els.feedList.innerHTML = '<div class="hint">Scanning… valid feeds will appear here.</div>'; 
   els.startBtn.disabled = true;
   els.stopBtn.disabled = false;
 
@@ -894,7 +896,7 @@ async function runDiscoverySession(seeds) {
   if (!state.session.feeds.length && !hasFatalError) {
     log('DONE', 'No valid feed records found', 'warn');
     setDiscoverStatus('Complete', 'No feeds found');
-    els.feedList.innerHTML = '<div class="hint">No feeds found.</div>';
+    els.feedList.innerHTML = '<div class="hint">No feeds found. Try Standard/Deep scan or paste a direct RSS URL.</div>';
   } else {
     state.session.feeds.sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0) || a.title.localeCompare(b.title));
     log('DONE', `${state.session.feeds.length} valid feeds discovered`, 'ok');

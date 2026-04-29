@@ -251,6 +251,48 @@ function unwrapKnownWrapper(candidateUrl) {
   }
 }
 
+
+function isFeedLikeUrl(inputUrl) {
+  try {
+    const url = new URL(inputUrl);
+    const host = url.hostname.toLowerCase();
+    const path = (url.pathname || '').toLowerCase();
+    const query = (url.search || '').toLowerCase();
+    const combined = `${path}${query}`;
+
+    if (host.includes('feedburner.com')) return true;
+    if (/\bjsonfeed\b/.test(combined)) return true;
+    if (/(^|\/)(feed|rss|atom)(\b|[\/_-])/.test(path)) return true;
+    if (/(feed|rss|atom)\.xml\b/.test(path)) return true;
+    if (/\.xml\b/.test(path) && /(rss|feed|atom|news)/.test(path)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function hasFeedIntent(context = {}, rawUrl = '') {
+  if (context.kind === 'link-rel' || context.kind === 'guess') return true;
+  if (isFeedLikeUrl(rawUrl)) return true;
+
+  const rel = String(context.rel || '').toLowerCase();
+  const type = String(context.type || '').toLowerCase();
+  const anchorText = String(context.anchorText || '').toLowerCase();
+
+  if (/(alternate|feed|rss|atom)/.test(rel)) return true;
+  if (FEED_TYPE_PATTERN.test(type)) return true;
+  if (/(rss|feed|atom|subscribe|syndication)/.test(anchorText)) return true;
+  return false;
+}
+
+function isFeedspotDirectory(url) {
+  try {
+    const u = new URL(url);
+    return u.hostname.toLowerCase() === 'rss.feedspot.com' && /_rss_feeds\/?$/i.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
 function rejectCandidate(rawUrl, context = {}) {
   try {
     const url = new URL(rawUrl);
@@ -269,9 +311,10 @@ function rejectCandidate(rawUrl, context = {}) {
     if (host.endsWith('feedspot.com') && FEEDSPOT_JUNK_PATH.test(pathname) && !host.startsWith('rss.')) return 'feedspot-directory-page';
 
     const fromAnchor = `${(context.anchorText || '').toLowerCase()} ${(context.rel || '').toLowerCase()}`;
-    if (/(privacy|terms|about|careers?|docs?|contact|support|widgets?|home|tools?)/.test(fromAnchor) && !HARD_FEED_PATH_PATTERN.test(pathname)) return 'nav-link';
+    if (context.kind === 'anchor' && !hasFeedIntent(context, rawUrl)) return 'non-feed-anchor';
+    if (/(privacy|terms|about|careers?|docs?|contact|support|widgets?|home|tools?)/.test(fromAnchor) && !HARD_FEED_PATH_PATTERN.test(pathname) && !isFeedLikeUrl(rawUrl)) return 'nav-link';
 
-    const isLikelyFeed = HARD_FEED_PATH_PATTERN.test(pathname) || FEED_HINT_PATTERN.test(pathname) || FEED_HINT_PATTERN.test(query);
+    const isLikelyFeed = isFeedLikeUrl(rawUrl) || HARD_FEED_PATH_PATTERN.test(pathname) || FEED_HINT_PATTERN.test(pathname) || FEED_HINT_PATTERN.test(query);
     if (!isLikelyFeed && (host.endsWith('feedspot.com') || context.kind === 'guess')) return 'unlikely-feed';
 
     return null;
@@ -332,7 +375,7 @@ function extractCandidates(html, pageUrl) {
     const href = $(el).attr('href') || '';
     const type = ($(el).attr('type') || '').toLowerCase();
     if (!href || (!FEED_TYPE_PATTERN.test(type) && !FEED_HINT_PATTERN.test(href))) return;
-    addCandidate(href, { kind: 'link-rel', rel });
+    addCandidate(href, { kind: 'link-rel', rel, type });
   });
 
   $('a[href]').each((_, el) => {
@@ -557,7 +600,8 @@ async function discoverFeeds(seeds, options = {}, onEvent) {
       } else if (candidate.wrapperAction === 'unwrapped-empty') {
         emit({ code: 'SKIP', level: 'warn', message: `junk candidate ${candidate.url}` });
       } else if (candidate.rejectedBy) {
-        emit({ code: 'SKIP', level: 'warn', message: `${candidate.rejectedBy} ${candidate.url}` });
+        const reason = candidate.rejectedBy === 'non-feed-anchor' ? 'SKIP non-feed-anchor' : candidate.rejectedBy;
+        emit({ code: 'SKIP', level: 'warn', message: `${reason} ${candidate.url}` });
       }
 
       if (candidate.rejectedBy || seen.has(candidate.url)) return;
@@ -565,10 +609,19 @@ async function discoverFeeds(seeds, options = {}, onEvent) {
       uniqueCandidates.push(candidate);
     });
 
-    totalCandidates += uniqueCandidates.length;
-    emitProgress('candidates-recovered', { seed, totalCandidates, unique: uniqueCandidates.length });
+    emit({ code: 'CAND', level: 'ok', message: `CANDIDATES raw ${uniqueCandidates.length} (${seed})` });
+    const feedspotScoped = isFeedspotDirectory(seed);
+    const keptCandidates = feedspotScoped
+      ? uniqueCandidates.filter((candidate) => hasFeedIntent(candidate, candidate.url) || isFeedLikeUrl(candidate.url))
+      : uniqueCandidates;
+    if (feedspotScoped) {
+      emit({ code: 'CAND', level: 'ok', message: `CANDIDATES kept ${keptCandidates.length} (${seed})` });
+    }
 
-    await mapLimit(uniqueCandidates, VALIDATION_CONCURRENCY, async (candidate) => {
+    totalCandidates += keptCandidates.length;
+    emitProgress('candidates-recovered', { seed, totalCandidates, unique: keptCandidates.length });
+
+    await mapLimit(keptCandidates, VALIDATION_CONCURRENCY, async (candidate) => {
       if (dedupe.has(candidate.url)) return;
       emitProgress('validating', { validated: validated + 1, total: Math.max(totalCandidates, validated + 1), feeds: dedupe.size });
       const result = await validateCandidate(seed, candidate, emit);
