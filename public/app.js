@@ -396,6 +396,13 @@ function renderFeedList() {
       e.stopPropagation();
       window.open(feed.url, '_blank', 'noopener');
     });
+    row.querySelector('[data-act="details"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.session.selectedFeedId = feed.id;
+      renderDiscoverInspector();
+      if (els.detailsDialog?.showModal) els.detailsDialog.showModal();
+      else console.warn('Details dialog is unavailable.');
+    });
     els.feedList.appendChild(row);
   });
 }
@@ -915,9 +922,3 @@ function init() {
 }
 
 init();
-    row.querySelector('[data-act="details"]').addEventListener('click', (e) => {
-      e.stopPropagation();
-      state.session.selectedFeedId = feed.id;
-      renderDiscoverInspector();
-      els.detailsDialog.showModal();
-    });
