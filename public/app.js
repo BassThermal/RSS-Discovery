@@ -408,11 +408,11 @@ function renderFeedList() {
             <div class="feed-url mono clamp-1" dir="ltr" title="${escapeHtml(feed.url)}">${escapeHtml(feed.url)}</div>
           </div>
           <div class="feed-actions">
-            <button class="row-action" data-act="copy">Copy</button>
-            <button class="row-action" data-act="open">Open</button>
-            <button class="row-action" data-act="toggle">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
-            <button class="row-action danger-action" data-act="delete">Delete</button>
-            <button class="row-action" data-act="details">Details</button>
+            <button class="row-action" data-act="copy" title="Copy feed URL">Copy</button>
+            <button class="row-action" data-act="open" title="Open feed">Open</button>
+            <button class="row-action" data-act="toggle" title="${feed.state === 'ignored' ? 'Include in Preview and Export' : 'Exclude from Preview and Export'}">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
+            <button class="row-action danger-action" data-act="delete" title="Remove from this session">Delete</button>
+            <button class="row-action" data-act="details" title="Show feed details">Details</button>
           </div>
         </div>
         <div class="feed-secondary">
@@ -543,6 +543,15 @@ function getFilteredHeadlines() {
     .filter((st) => !query || `${st.title} ${st.excerpt} ${st.url}`.toLowerCase().includes(query));
 }
 
+function getVisibleStoryCountForSource(sourceId) {
+  const query = state.reader.headlineSearch.toLowerCase();
+  const cutoff = Date.now() - state.reader.rangeHours * 3600 * 1000;
+  return state.reader.stories
+    .filter((st) => sourceId === 'all' || st.sourceId === sourceId)
+    .filter((st) => !st.publishedAt || st.publishedAt >= cutoff)
+    .filter((st) => !query || `${st.title} ${st.excerpt} ${st.url}`.toLowerCase().includes(query)).length;
+}
+
 function updateReaderScopeSummary() {
   const activeSources = state.session.feeds.filter((f) => f.state === 'included' && feedPassesFreshness(f)).length;
   const visibleStories = getFilteredHeadlines().length;
@@ -555,7 +564,7 @@ function renderPackList() {
   const included = state.session.feeds.filter((f) => f.state === 'included' && feedPassesFreshness(f)).length;
   els.packList.innerHTML = '';
   els.packCount.textContent = `${included} sources`;
-  els.packSummary.textContent = included ? `All sources · ${included}` : 'No sources yet. Find feeds first.';
+  els.packSummary.textContent = included ? `${included} sources` : 'No sources yet. Find feeds first.';
   if (!sources.length) {
     updateReaderScopeSummary();
     return (els.packList.innerHTML = '<div class="hint">No source rows match search.</div>');
@@ -563,7 +572,7 @@ function renderPackList() {
   sources.forEach((src) => {
     const row = document.createElement('div');
     row.className = `pack-row ${state.reader.selectedSourceId === src.id ? 'selected' : ''}`;
-    row.innerHTML = `${iconMarkup(src.domain, src.label, src.iconUrl)}<div class="pack-main"><div class="pack-title clamp-1">${escapeHtml(src.label)}</div><div class="sub mono">${escapeHtml(src.domain)}</div></div><span class="badge">${src.stories}</span>`;
+    row.innerHTML = `${iconMarkup(src.domain, src.label, src.iconUrl)}<div class="pack-main"><div class="pack-title clamp-1">${escapeHtml(src.label)}</div><div class="sub mono">${escapeHtml(src.domain)}</div></div><span class="badge">${getVisibleStoryCountForSource(src.id)}</span>`;
     row.addEventListener('click', () => {
       stopHeadlineAutoAdvance();
       state.reader.selectedSourceId = src.id;
@@ -608,15 +617,15 @@ function renderHeadlineList() {
     row.className = `headline-row ${state.reader.activeStoryId === st.id ? 'active' : ''}`;
     row.tabIndex = 0;
     row.dataset.storyId = st.id;
-    row.innerHTML = `<div class="headline-content"><div class="headline-topline"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><div class="story-meta"><span class="mono quiet story-time">${escapeHtml(formatStoryTime(st.publishedAt))}</span><span class="badge age">${formatAge(st.publishedAt)}</span></div></div><a class="headline-title headline-link" dir="auto" href="${escapeHtml(st.url)}" target="_blank" rel="noopener" title="Open article">${escapeHtml(st.title)}</a><div class="headline-excerpt" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><div class="headline-actions"><button class="row-action" data-act="details" title="Show article details">Details</button></div>`;
+    const storyMeta = st.publishedAt
+      ? `<span class="mono quiet story-time">${escapeHtml(formatStoryTime(st.publishedAt))}</span><span class="badge age">${formatAge(st.publishedAt)}</span>`
+      : '<span class="badge quiet">No date</span>';
+    row.innerHTML = `<div class="headline-content"><div class="headline-topline"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><div class="story-meta">${storyMeta}</div></div><a class="headline-title headline-link" dir="auto" href="${escapeHtml(st.url)}" target="_blank" rel="noopener" title="Open article">${escapeHtml(st.title)}</a><div class="headline-excerpt" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><div class="headline-actions"><button class="row-action" data-act="details" title="Show article details">Details</button></div>`;
     row.addEventListener('focus', () => {
       state.reader.activeStoryId = st.id;
-      renderHeadlineList();
     });
     row.addEventListener('click', (e) => {
       if (e.target.closest('a,button')) return;
-      state.reader.activeStoryId = st.id;
-      renderHeadlineList();
       window.open(st.url, '_blank', 'noopener');
     });
     row.querySelector('.headline-link').addEventListener('click', (e) => e.stopPropagation());
@@ -695,6 +704,10 @@ function updateHeadlineNavControls(rows = getFilteredHeadlines()) {
     if (btn) btn.disabled = disabled;
   });
   if (els.headlineAutoBtn) els.headlineAutoBtn.classList.toggle('primary', Boolean(state.reader.autoAdvanceTimer));
+  if (els.headlineAutoBtn) {
+    els.headlineAutoBtn.textContent = state.reader.autoAdvanceTimer ? 'Pause' : 'Auto-review';
+    els.headlineAutoBtn.title = 'Step through visible articles every 5 seconds';
+  }
 }
 
 function renderStoryInspector() {
@@ -737,8 +750,8 @@ function refreshReaderStatus() {
   if (state.mode !== 'reader') return;
   const visible = getFilteredHeadlines().length;
   const included = getIncludedFeeds().length;
-  els.toolbarContext.textContent = `Previewing ${included} included feeds`;
-  els.toolbarSecondary.textContent = `${visible} visible articles`;
+  els.toolbarContext.textContent = `${included} sources`;
+  els.toolbarSecondary.textContent = `${visible} articles`;
   els.statusLeft.textContent = 'PREVIEW · Active';
   els.statusRight.textContent = `Loaded ${state.reader.stories.length} · Range ${state.reader.rangeHours}h`;
   updateReaderScopeSummary();

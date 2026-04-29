@@ -105,7 +105,7 @@
               </select>
               <div class="results-toolbar-actions">
                 <div class="export-group">
-                  <button class="btn micro" id="exportBtn">Export ▾</button>
+                  <button class="btn micro" id="exportBtn">Export included ▾</button>
                   <div class="export-menu" id="exportMenu">
                     <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
                     <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
@@ -135,11 +135,11 @@
             <div class="toolbar-inline">
               <div class="tiny" id="headlineSummary">Loaded from included feeds</div>
               <div class="headline-nav-controls">
-                <button class="btn micro ghost" id="headlineOldestBtn">Oldest</button>
-                <button class="btn micro ghost" id="headlinePrevBtn">Prev</button>
-                <button class="btn micro ghost" id="headlineNextBtn">Next</button>
-                <button class="btn micro ghost" id="headlineLatestBtn">Latest</button>
-                <button class="btn micro ghost" id="headlineAutoBtn">Auto</button>
+                <button class="btn micro ghost" id="headlineOldestBtn" title="Jump to oldest visible article">Oldest</button>
+                <button class="btn micro ghost" id="headlinePrevBtn" title="Previous visible article">Prev</button>
+                <button class="btn micro ghost" id="headlineNextBtn" title="Next visible article">Next</button>
+                <button class="btn micro ghost" id="headlineLatestBtn" title="Jump to newest visible article">Latest</button>
+                <button class="btn micro ghost" id="headlineAutoBtn" title="Step through visible articles every 5 seconds">Auto-review</button>
               </div>
             </div>
           </div>
