@@ -425,6 +425,15 @@ body.reader-active .reader-controls select { min-height: var(--h28); }
   letter-spacing: .01em;
 }
 .row-action:hover { background: var(--hover); }
+.row-action.danger-action,
+.btn.danger-action {
+  border-color: #7d4b47;
+  color: #ff9c95;
+}
+.row-action.danger-action:hover,
+.btn.danger-action:hover {
+  background: #3a1e1c;
+}
 .btn.ghost { background: transparent; }
 
 .inspector { padding: 10px; display: grid; gap: 8px; }

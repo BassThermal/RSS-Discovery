@@ -411,6 +411,7 @@ function renderFeedList() {
             <button class="row-action" data-act="copy">Copy</button>
             <button class="row-action" data-act="open">Open</button>
             <button class="row-action" data-act="toggle">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
+            <button class="row-action danger-action" data-act="delete">Delete</button>
             <button class="row-action" data-act="details">Details</button>
           </div>
         </div>
@@ -440,6 +441,10 @@ function renderFeedList() {
     row.querySelector('[data-act="open"]').addEventListener('click', (e) => {
       e.stopPropagation();
       window.open(feed.url, '_blank', 'noopener');
+    });
+    row.querySelector('[data-act="delete"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteFeed(feed.id);
     });
     row.querySelector('[data-act="details"]').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -478,6 +483,30 @@ function setFeedState(id, nextState) {
   refreshReaderStatus();
 }
 
+function deleteFeed(id) {
+  const index = state.session.feeds.findIndex((f) => f.id === id);
+  if (index < 0) return;
+  const feed = state.session.feeds[index];
+  if (!window.confirm('Delete this feed from the current session?')) return;
+  state.session.feeds.splice(index, 1);
+  state.session.selectedFeedIds.delete(id);
+  if (state.session.selectedFeedId === id) state.session.selectedFeedId = null;
+  if (state.reader.selectedSourceId === id) state.reader.selectedSourceId = 'all';
+  if (state.reader.activeStoryId?.startsWith(`${id}-`)) state.reader.activeStoryId = null;
+  if (state.reader.selectedHeadlineId?.startsWith(`${id}-`)) state.reader.selectedHeadlineId = null;
+  rebuildReaderData();
+  syncReaderSelection();
+  renderFeedList();
+  renderDiscoverInspector();
+  updateDiscoverMetrics();
+  renderPackList();
+  renderHeadlineList();
+  renderStoryInspector();
+  refreshReaderStatus();
+  if (els.detailsDialog?.open) els.detailsDialog.close();
+  log('DELETE', `Removed ${feed.title} from this session`, 'warn');
+}
+
 function updateDiscoverMetrics() {
   const total = state.session.feeds.length;
   const included = state.session.feeds.filter((f) => f.state === 'included').length;
@@ -495,8 +524,9 @@ function renderDiscoverInspector() {
     return;
   }
   const lastUpdated = feed.latestAt ? new Date(feed.latestAt).toLocaleString() : 'Unknown';
-  els.discoverInspector.innerHTML = `<div class="block"><div class="k">Feed title</div><div class="v">${escapeHtml(feed.title)}</div></div><div class="block"><div class="k">Domain</div><div class="s">${escapeHtml(feed.sourceDomain || 'Unknown')}</div><div class="k">Feed URL</div><div class="s mono">${escapeHtml(feed.url)}</div><div class="k">Site URL</div><div class="s mono">${escapeHtml(feed.sourceHome || feed.sourceSeed || 'Unknown')}</div></div><div class="block"><div class="k">Latest item</div><div class="v">${escapeHtml(feed.latestTitle || 'No item title')}</div><div class="s mono">${escapeHtml(feed.latestUrl || 'No article URL')}</div><div class="s">Last updated ${escapeHtml(lastUpdated)}</div></div><div class="block"><div class="k">Discovered via</div><div class="s">${escapeHtml(feed.discoveredVia || 'scan')}</div><div class="k">Format</div><div class="s">${escapeHtml(feed.format.toUpperCase())}</div></div><div class="row2"><button class="btn micro" id="insToggle">${feed.state === 'included' ? 'Ignore' : 'Include'}</button><button class="btn micro" id="insCopy">Copy URL</button></div><div class="row2"><button class="btn micro" id="insOpenFeed">Open feed</button><button class="btn micro" id="insOpenArticle" ${feed.latestUrl ? '' : 'disabled'}>Open latest</button></div>`;
+  els.discoverInspector.innerHTML = `<div class="block"><div class="k">Feed title</div><div class="v">${escapeHtml(feed.title)}</div></div><div class="block"><div class="k">Domain</div><div class="s">${escapeHtml(feed.sourceDomain || 'Unknown')}</div><div class="k">Feed URL</div><div class="s mono">${escapeHtml(feed.url)}</div><div class="k">Site URL</div><div class="s mono">${escapeHtml(feed.sourceHome || feed.sourceSeed || 'Unknown')}</div></div><div class="block"><div class="k">Latest item</div><div class="v">${escapeHtml(feed.latestTitle || 'No item title')}</div><div class="s mono">${escapeHtml(feed.latestUrl || 'No article URL')}</div><div class="s">Last updated ${escapeHtml(lastUpdated)}</div></div><div class="block"><div class="k">Discovered via</div><div class="s">${escapeHtml(feed.discoveredVia || 'scan')}</div><div class="k">Format</div><div class="s">${escapeHtml(feed.format.toUpperCase())}</div></div><div class="row2"><button class="btn micro" id="insToggle">${feed.state === 'included' ? 'Ignore' : 'Include'}</button><button class="btn micro danger-action" id="insDelete">Delete</button><button class="btn micro" id="insCopy">Copy URL</button></div><div class="row2"><button class="btn micro" id="insOpenFeed">Open feed</button><button class="btn micro" id="insOpenArticle" ${feed.latestUrl ? '' : 'disabled'}>Open latest</button></div>`;
   document.getElementById('insToggle').addEventListener('click', () => setFeedState(feed.id, feed.state === 'included' ? 'ignored' : 'included'));
+  document.getElementById('insDelete').addEventListener('click', () => deleteFeed(feed.id));
   document.getElementById('insCopy').addEventListener('click', () => copyText(feed.url, 'Copied 1 feed URL'));
   document.getElementById('insOpenFeed').addEventListener('click', () => window.open(feed.url, '_blank', 'noopener'));
   document.getElementById('insOpenArticle').addEventListener('click', () => feed.latestUrl && window.open(feed.latestUrl, '_blank', 'noopener'));
@@ -553,7 +583,11 @@ function renderHeadlineList() {
   els.headlineList.innerHTML = '';
   els.headlineCount.textContent = `${rows.length} shown`;
   const sourceLabel = state.reader.sources.find((s) => s.id === state.reader.selectedSourceId)?.label || 'All sources';
-  els.headlineSummary.textContent = `Time range ${state.reader.rangeHours}h · ${sourceLabel} · Loaded ${state.reader.stories.length}`;
+  const isSearchActive = Boolean(state.reader.headlineSearch.trim());
+  const articleLabel = isSearchActive
+    ? `${rows.length} matching ${rows.length === 1 ? 'article' : 'articles'}`
+    : `${rows.length} ${rows.length === 1 ? 'article' : 'articles'}`;
+  els.headlineSummary.textContent = `${sourceLabel} · ${articleLabel} · Last ${state.reader.rangeHours}h`;
   if (!state.session.feeds.some((f) => f.state === 'included')) {
     updateReaderScopeSummary();
     return (els.headlineList.innerHTML = '<div class="hint">No included feeds yet. Include feeds in Discover.</div>');
