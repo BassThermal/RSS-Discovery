@@ -21,7 +21,10 @@ const state = {
     sources: [],
     stories: []
   },
-  logs: []
+  logs: [],
+  currentPackId: null,
+  packDirty: false,
+  savedPacks: []
 };
 
 const els = {
@@ -75,7 +78,14 @@ const els = {
   headlineList: document.getElementById('headlineList'),
   headlineCount: document.getElementById('headlineCount'),
   headlineSummary: document.getElementById('headlineSummary'),
-  refreshArticlesBtn: document.getElementById('refreshArticlesBtn')
+  refreshArticlesBtn: document.getElementById('refreshArticlesBtn'),
+  packLabel: document.getElementById('packLabel'),
+  packSaveBtn: document.getElementById('packSaveBtn'),
+  packSaveAsBtn: document.getElementById('packSaveAsBtn'),
+  packLoadBtn: document.getElementById('packLoadBtn'),
+  packsDialog: document.getElementById('packsDialog'),
+  packsDialogBody: document.getElementById('packsDialogBody'),
+  closePacksBtn: document.getElementById('closePacksBtn')
 };
 
 function assertRequiredEls() {
@@ -334,6 +344,65 @@ function deriveStoriesFromFeeds(feeds) {
   return stories;
 }
 
+
+const PACKS_STORAGE_KEY = 'rssDiscovery.packs.v1';
+
+function updatePackUi() {
+  if (!els.packLabel) return;
+  const current = state.savedPacks.find((p) => p.id === state.currentPackId);
+  if (!current) els.packLabel.textContent = 'Unsaved scan';
+  else if (state.packDirty) els.packLabel.textContent = `${current.name} · unsaved changes`;
+  else els.packLabel.textContent = `Pack: ${current.name}`;
+}
+
+function loadSavedPacks() {
+  try {
+    const raw = localStorage.getItem(PACKS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) throw new Error('invalid packs payload');
+    return parsed.filter((p) => p && p.schema === 1 && p.id);
+  } catch (err) {
+    log('PACK', 'Saved packs were corrupt and were reset.', 'warn');
+    localStorage.removeItem(PACKS_STORAGE_KEY);
+    return [];
+  }
+}
+function writeSavedPacks(packs) { localStorage.setItem(PACKS_STORAGE_KEY, JSON.stringify(packs)); state.savedPacks = packs; }
+function getSavedPackById(id) { return state.savedPacks.find((p) => p.id === id) || null; }
+function serializeCurrentPack(name, existingPack) {
+  const now = new Date().toISOString();
+  return { schema: 1, id: existingPack?.id || `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`, name: name.trim().slice(0,80), createdAt: existingPack?.createdAt || now, updatedAt: now, seeds: parseSeeds(els.seedInput.value), scanMode: els.scanModeSelect.value || state.session.scanMode || 'standard', feeds: state.session.feeds, selectedSourceId: state.reader.selectedSourceId || 'all' };
+}
+function restorePack(pack){
+  state.session.feeds = Array.isArray(pack.feeds) ? pack.feeds.map((f)=>normalizeFeed(f)).filter(Boolean):[];
+  els.seedInput.value = (pack.seeds || []).join('\n');
+  els.scanModeSelect.value = pack.scanMode || 'standard';
+  state.session.scanMode = els.scanModeSelect.value;
+  rebuildReaderData();
+  state.reader.selectedSourceId = state.reader.sources.some((s)=>s.id===pack.selectedSourceId)?pack.selectedSourceId:'all';
+  renderFeedList(); renderDiscoverInspector(); updateDiscoverMetrics(); renderPackList(); renderHeadlineList(); refreshReaderStatus();
+}
+function markPackDirty(){ if (state.currentPackId) { state.packDirty = true; updatePackUi(); } }
+function saveCurrentPack(){
+  if (!state.session.feeds.length){ log('PACK','No feeds to save.','warn'); return; }
+  if (!state.currentPackId) return saveCurrentPackAs();
+  const existing=getSavedPackById(state.currentPackId); if(!existing) return saveCurrentPackAs();
+  const next=serializeCurrentPack(existing.name, existing);
+  writeSavedPacks(state.savedPacks.map((p)=>p.id===existing.id?next:p));
+  state.packDirty=false; updatePackUi(); log('PACK',`Saved changes to ${next.name}`,'ok');
+}
+function saveCurrentPackAs(){
+  if (!state.session.feeds.length){ log('PACK','No feeds to save.','warn'); return; }
+  const name=(window.prompt('Pack name')||'').trim().slice(0,80); if(!name) return;
+  const pack=serializeCurrentPack(name);
+  writeSavedPacks([pack, ...state.savedPacks.filter((p)=>p.id!==pack.id)]);
+  state.currentPackId=pack.id; state.packDirty=false; updatePackUi(); log('PACK',`Saved ${pack.name}`,'ok');
+}
+function deleteSavedPack(id){ const pack=getSavedPackById(id); if(!pack) return; if(!window.confirm(`Delete saved pack ${pack.name}?`)) return; writeSavedPacks(state.savedPacks.filter((p)=>p.id!==id)); if(state.currentPackId===id){ state.currentPackId=null; state.packDirty=state.session.feeds.length>0; } renderPacksDialog(); updatePackUi(); log('PACK',`Deleted ${pack.name}`,'warn'); }
+function renderPacksDialog(){ if(!els.packsDialogBody) return; if(!state.savedPacks.length){ els.packsDialogBody.innerHTML='<div class="hint">No saved packs yet.</div>'; return; } els.packsDialogBody.innerHTML=''; state.savedPacks.slice().sort((a,b)=>Date.parse(b.updatedAt)-Date.parse(a.updatedAt)).forEach((pack)=>{ const row=document.createElement('div'); row.className='saved-pack-row'; row.innerHTML=`<div><div class="saved-pack-name">${escapeHtml(pack.name)}</div><div class="tiny mono">${(pack.feeds||[]).length} feeds · ${escapeHtml(pack.scanMode||'standard')} · ${escapeHtml(new Date(pack.updatedAt).toLocaleString())}</div></div><div class="saved-pack-actions"><button class="btn micro" data-act="load">Load</button><button class="btn micro danger-action" data-act="delete">Delete</button></div>`; row.querySelector('[data-act="load"]').addEventListener('click',()=>{ if(state.packDirty && !window.confirm('Load this pack and discard unsaved changes?')) return; restorePack(pack); state.currentPackId=pack.id; state.packDirty=false; updatePackUi(); els.packsDialog?.close?.(); log('PACK',`Loaded ${pack.name}`,'ok');}); row.querySelector('[data-act="delete"]').addEventListener('click',()=>deleteSavedPack(pack.id)); els.packsDialogBody.appendChild(row); }); }
+function openPacksDialog(){ renderPacksDialog(); els.packsDialog?.showModal?.(); }
+
 function rebuildReaderData() {
   state.reader.sources = deriveReaderSourcesFromFeeds(state.session.feeds.filter(feedPassesFreshness));
   state.reader.stories = deriveStoriesFromFeeds(state.session.feeds.filter(feedPassesFreshness));
@@ -359,6 +428,7 @@ function clearSession() {
     state.session.streamController = null;
   }
   state.logs = [];
+  markPackDirty('session-reset');
   state.session.running = false;
   state.session.stopped = false;
   resetSessionData();
@@ -460,8 +530,10 @@ function setFeedState(id, nextState) {
   const feed = state.session.feeds.find((f) => f.id === id);
   if (!feed) return;
   feed.state = nextState;
+  markPackDirty('feed-state');
   log(nextState === 'ignored' ? 'IGNORE' : 'INCLUDE', `${feed.title} set to ${nextState}`, nextState === 'ignored' ? 'warn' : 'ok');
   rebuildReaderData();
+  markPackDirty('feed-delete');
   syncReaderSelection();
   renderFeedList();
   renderDiscoverInspector();
@@ -482,6 +554,7 @@ function deleteFeed(id) {
   if (state.reader.selectedSourceId === id) state.reader.selectedSourceId = 'all';
   if (state.reader.activeStoryId?.startsWith(`${id}-`)) state.reader.activeStoryId = null;
   rebuildReaderData();
+  markPackDirty('feed-delete');
   syncReaderSelection();
   renderFeedList();
   renderDiscoverInspector();
@@ -628,10 +701,12 @@ function batchSetSelected(nextState) {
     const feed = state.session.feeds.find((f) => f.id === id);
     if (feed) feed.state = nextState;
   });
+  markPackDirty('feed-state');
   log(nextState === 'ignored' ? 'IGNORE' : 'INCLUDE', `${state.session.selectedFeedIds.size} selected feeds set to ${nextState}`, nextState === 'ignored' ? 'warn' : 'ok');
   state.session.selectedFeedIds.clear();
   state.session.selectionMode = false;
   rebuildReaderData();
+  markPackDirty('feed-delete');
   syncReaderSelection();
   renderFeedList();
   renderDiscoverInspector();
@@ -689,6 +764,7 @@ async function refreshReaderItemsFromBackend() {
     }
   });
   rebuildReaderData();
+  markPackDirty('feed-delete');
   syncReaderSelection();
   renderFeedList();
   renderPackList();
@@ -895,6 +971,7 @@ async function runDiscoverySession(seeds) {
             state.session.feeds.push(normalized);
             if (!state.session.selectedFeedId) state.session.selectedFeedId = normalized.id;
             rebuildReaderData();
+            markPackDirty('new-feed');
             renderFeedList();
             renderDiscoverInspector();
             updateDiscoverMetrics();
@@ -1015,6 +1092,10 @@ function bindEvents() {
     setDiscoverStatus('Stopped', 'Session interrupted');
   });
   els.clearBtn.addEventListener('click', clearSession);
+  els.packSaveBtn?.addEventListener('click', saveCurrentPack);
+  els.packSaveAsBtn?.addEventListener('click', saveCurrentPackAs);
+  els.packLoadBtn?.addEventListener('click', openPacksDialog);
+  els.closePacksBtn?.addEventListener('click', () => els.packsDialog?.close?.());
   const openPreview = async () => {
     const included = getIncludedFeeds().length;
     log('RUN', included ? `Preview latest articles from ${included} included feed(s)` : 'Preview latest articles with no included feeds', included ? 'ok' : 'warn');
@@ -1061,6 +1142,8 @@ function bindEvents() {
     renderHeadlineList();
       refreshReaderStatus();
   });
+  els.seedInput.addEventListener('input', () => markPackDirty('seed-input'));
+  els.scanModeSelect.addEventListener('change', () => { state.session.scanMode = els.scanModeSelect.value || 'standard'; markPackDirty('scan-mode'); });
   els.rangeSelect.addEventListener('change', () => {
     state.reader.rangeHours = Number(els.rangeSelect.value);
     renderHeadlineList();
@@ -1072,6 +1155,8 @@ function bindEvents() {
 function init() {
   if (!assertRequiredEls()) return;
   bindEvents();
+  state.savedPacks = loadSavedPacks();
+  updatePackUi();
   clearSession();
   setMode('discover');
   log('RUNTIME', 'Discovery transport: local backend /api/discover-stream', 'ok');
