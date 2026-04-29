@@ -83,6 +83,9 @@ const els = {
   packSaveBtn: document.getElementById('packSaveBtn'),
   packSaveAsBtn: document.getElementById('packSaveAsBtn'),
   packLoadBtn: document.getElementById('packLoadBtn'),
+  packsMenuBtn: document.getElementById('packsMenuBtn'),
+  packsMenu: document.getElementById('packsMenu'),
+  packDeleteBtn: document.getElementById('packDeleteBtn'),
   packsDialog: document.getElementById('packsDialog'),
   packsDialogBody: document.getElementById('packsDialogBody'),
   closePacksBtn: document.getElementById('closePacksBtn')
@@ -234,7 +237,7 @@ function renderTerminal() {
 function setDiscoverStatus(context, right) {
   els.toolbarContext.textContent = context;
   els.toolbarSecondary.textContent = right;
-  if (state.mode === 'discover') els.statusLeft.textContent = `DISCOVER · ${context}`;
+  if (state.mode === 'discover') els.statusLeft.textContent = `FIND · ${context}`;
   els.statusRight.textContent = right;
 }
 
@@ -351,8 +354,10 @@ function updatePackUi() {
   if (!els.packLabel) return;
   const current = state.savedPacks.find((p) => p.id === state.currentPackId);
   if (!current) els.packLabel.textContent = 'Unsaved scan';
-  else if (state.packDirty) els.packLabel.textContent = `${current.name} · unsaved changes`;
-  else els.packLabel.textContent = `Pack: ${current.name}`;
+  else if (state.packDirty) els.packLabel.textContent = `Pack: ${current.name} · unsaved changes`;
+  else els.packLabel.textContent = `Pack: ${current.name} · saved`;
+  if (els.packSaveBtn) els.packSaveBtn.textContent = state.packDirty ? 'Save changes' : 'Save';
+  if (els.packDeleteBtn) els.packDeleteBtn.disabled = !current;
 }
 
 function loadSavedPacks() {
@@ -572,7 +577,7 @@ function updateDiscoverMetrics() {
   const ignored = state.session.feeds.filter((f) => f.state === 'ignored').length;
   els.discoverSummary.textContent = `${total} found · ${included} included`;
   els.exportBtn.disabled = included === 0;
-  els.exportBtn.title = included === 0 ? 'No included feeds' : 'Export included feeds';
+  els.exportBtn.title = included === 0 ? 'No included feeds' : 'Export included feeds. Ignored and deleted feeds are excluded.';
   if (state.mode === 'discover') els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${included}`;
 }
 
@@ -726,7 +731,7 @@ function refreshReaderStatus() {
   const included = getIncludedFeeds().length;
   els.toolbarContext.textContent = `${included} sources`;
   els.toolbarSecondary.textContent = `${visible} articles`;
-  els.statusLeft.textContent = 'PREVIEW · Active';
+  els.statusLeft.textContent = 'READER · Active';
   els.statusRight.textContent = `Loaded ${state.reader.stories.length} · Range ${state.reader.rangeHours}h`;
   updateReaderScopeSummary();
 }
@@ -1046,11 +1051,11 @@ function setMode(mode) {
   els.readerPane.classList.toggle('active', !isDiscover);
   els.discoverActions.classList.toggle('hidden', !isDiscover);
   els.readerActions.classList.toggle('hidden', isDiscover);
-  els.toolbarMode.textContent = isDiscover ? 'Discover' : 'Preview';
+  els.toolbarMode.textContent = isDiscover ? 'Find' : 'Reader';
   if (isDiscover) {
     els.toolbarContext.textContent = state.session.running ? 'Running' : (state.session.feeds.length ? 'Complete' : 'Idle');
     els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${getIncludedFeeds().length}`;
-    els.statusLeft.textContent = `DISCOVER · ${els.toolbarContext.textContent}`;
+    els.statusLeft.textContent = `FIND · ${els.toolbarContext.textContent}`;
     els.statusRight.textContent = els.toolbarSecondary.textContent;
   } else {
     syncReaderSelection();
@@ -1093,12 +1098,14 @@ function bindEvents() {
   });
   els.clearBtn.addEventListener('click', clearSession);
   els.packSaveBtn?.addEventListener('click', saveCurrentPack);
-  els.packSaveAsBtn?.addEventListener('click', saveCurrentPackAs);
-  els.packLoadBtn?.addEventListener('click', openPacksDialog);
+  els.packSaveAsBtn?.addEventListener('click', () => { saveCurrentPackAs(); els.packsMenu?.classList.remove('open'); });
+  els.packLoadBtn?.addEventListener('click', () => { openPacksDialog(); els.packsMenu?.classList.remove('open'); });
+  els.packDeleteBtn?.addEventListener('click', () => { if (state.currentPackId) deleteSavedPack(state.currentPackId); els.packsMenu?.classList.remove('open'); });
+  els.packsMenuBtn?.addEventListener('click', (e) => { e.stopPropagation(); els.packsMenu?.classList.toggle('open'); });
   els.closePacksBtn?.addEventListener('click', () => els.packsDialog?.close?.());
   const openPreview = async () => {
     const included = getIncludedFeeds().length;
-    log('RUN', included ? `Preview latest articles from ${included} included feed(s)` : 'Preview latest articles with no included feeds', included ? 'ok' : 'warn');
+    log('RUN', included ? `Open reader for ${included} included feed(s)` : 'Open reader with no included feeds', included ? 'ok' : 'warn');
     setMode('reader');
     try { await refreshReaderItemsFromBackend(); } catch (err) { log('ERROR', `Reader load failed ${String(err?.message || err)}`, 'err'); }
   };
@@ -1124,7 +1131,10 @@ function bindEvents() {
     els.exportMenu.classList.toggle('open');
   });
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.export-group')) els.exportMenu.classList.remove('open');
+    if (!e.target.closest('.export-group')) {
+      els.exportMenu.classList.remove('open');
+      els.packsMenu?.classList.remove('open');
+    }
   });
   els.exportOpmlBtn.addEventListener('click', () => exportIncluded('opml'));
   els.copyUrlsBtn.addEventListener('click', () => copyIncludedUrls());
