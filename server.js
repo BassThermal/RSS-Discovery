@@ -262,8 +262,13 @@ function isFeedLikeUrl(inputUrl) {
 
     if (host.includes('feedburner.com')) return true;
     if (/\bjsonfeed\b/.test(combined)) return true;
-    if (/(^|\/)(feed|rss|atom)(\b|[\/_-])/.test(path)) return true;
-    if (/(feed|rss|atom)\.xml\b/.test(path)) return true;
+    if (/(^|\/)(feed|rss|atom|rssfeed|rss-feed)(\b|[\/_-])/.test(path)) return true;
+    if (/(feed|rss|atom|rssfeed|rss-feed)\.xml\b/.test(path)) return true;
+    if (/\/rssfeed\/\d+/i.test(path)) return true;
+    for (const [, value] of url.searchParams.entries()) {
+      const decoded = String(value || '').toLowerCase();
+      if (/(rss|feed|atom|xml)/.test(decoded)) return true;
+    }
     if (/\.xml\b/.test(path) && /(rss|feed|atom|news)/.test(path)) return true;
     return false;
   } catch {
@@ -311,7 +316,6 @@ function rejectCandidate(rawUrl, context = {}) {
     if (host.endsWith('feedspot.com') && FEEDSPOT_JUNK_PATH.test(pathname) && !host.startsWith('rss.')) return 'feedspot-directory-page';
 
     const fromAnchor = `${(context.anchorText || '').toLowerCase()} ${(context.rel || '').toLowerCase()}`;
-    if (context.kind === 'anchor' && !hasFeedIntent(context, rawUrl)) return 'non-feed-anchor';
     if (/(privacy|terms|about|careers?|docs?|contact|support|widgets?|home|tools?)/.test(fromAnchor) && !HARD_FEED_PATH_PATTERN.test(pathname) && !isFeedLikeUrl(rawUrl)) return 'nav-link';
 
     const isLikelyFeed = isFeedLikeUrl(rawUrl) || HARD_FEED_PATH_PATTERN.test(pathname) || FEED_HINT_PATTERN.test(pathname) || FEED_HINT_PATTERN.test(query);
@@ -590,6 +594,16 @@ async function discoverFeeds(seeds, options = {}, onEvent) {
     emit({ code: 'FETCH', level: 'ok', message: `seed ${seed}` });
     emitProgress('scanning-seed', { seed, scanMode: scanConfig.mode });
 
+    emit({ code: 'CHECK', level: 'ok', message: `direct-feed check ${seed}` });
+    const directCandidate = { url: seed, wrappedUrl: '', kind: 'direct-seed' };
+    const directResult = await validateCandidate(seed, directCandidate, emit);
+    validated += 1;
+    if (directResult.ok && directResult.feed && !dedupe.has(seed)) {
+      dedupe.set(seed, directResult.feed);
+      if (onEvent) onEvent({ type: 'feed', feed: directResult.feed, totalFeeds: dedupe.size });
+      emit({ code: 'VALID', level: 'ok', message: `direct feed accepted ${seed}` });
+    }
+
     const { extracted } = await collectCandidatesFromSeed(seed, scanConfig, emit, emitProgress);
     const uniqueCandidates = [];
     const seen = new Set();
@@ -611,9 +625,7 @@ async function discoverFeeds(seeds, options = {}, onEvent) {
 
     emit({ code: 'CAND', level: 'ok', message: `CANDIDATES raw ${uniqueCandidates.length} (${seed})` });
     const feedspotScoped = isFeedspotDirectory(seed);
-    const keptCandidates = feedspotScoped
-      ? uniqueCandidates.filter((candidate) => hasFeedIntent(candidate, candidate.url) || isFeedLikeUrl(candidate.url))
-      : uniqueCandidates;
+    const keptCandidates = uniqueCandidates;
     if (feedspotScoped) {
       emit({ code: 'CAND', level: 'ok', message: `CANDIDATES kept ${keptCandidates.length} (${seed})` });
     }
