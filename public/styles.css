@@ -576,3 +576,7 @@ body.reader-active .reader-layout .headline-row { padding-left: 8px; padding-rig
   .feed-primary { grid-template-columns: 1fr; }
   .feed-actions { justify-content: flex-start; }
 }
+.pack-label { color: var(--text-2); font-size: 11px; }
+.saved-pack-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--border); }
+.saved-pack-name { font-weight:700; }
+.saved-pack-actions { display:flex; gap:6px; }

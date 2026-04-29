@@ -114,6 +114,10 @@
                   </div>
                 </div>
                 <button class="btn micro" id="toolbarPreviewBtn">Preview</button>
+                <button class="btn micro" id="packSaveBtn">Save</button>
+                <button class="btn micro" id="packSaveAsBtn">Save as</button>
+                <button class="btn micro" id="packLoadBtn">Load</button>
+                <span class="pack-label mono" id="packLabel">Unsaved scan</span>
                 <button class="btn micro ghost" id="toolbarLogBtn">Log</button>
               </div>
             </div>
@@ -154,6 +158,14 @@
         <div class="pane">
           <div class="pane-head"><div class="pane-title">Scan log</div><div class="pane-meta mono" id="logCount">0 actions</div><button class="btn micro ghost" id="closeLogBtn">Close</button></div>
           <div class="pane-body terminal" id="terminal"></div>
+        </div>
+      </dialog>
+
+      
+      <dialog id="packsDialog" class="overlay-dialog">
+        <div class="pane">
+          <div class="pane-head"><div class="pane-title">Saved packs</div><button class="btn micro ghost" id="closePacksBtn">Close</button></div>
+          <div class="pane-body" id="packsDialogBody"></div>
         </div>
       </dialog>
 
