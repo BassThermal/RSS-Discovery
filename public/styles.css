@@ -172,7 +172,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 .workspace { min-height: 0; display: none; gap: 8px; }
 .workspace.active { display: grid; }
 .discover-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-.reader-layout { grid-template-columns: 280px 1fr 330px; }
+.reader-layout { grid-template-columns: 280px 1fr; }
 
 body.reader-active .app-shell { grid-template-columns: 252px 1fr; }
 body.reader-active .app-sidebar { gap: 6px; padding: 8px; }
@@ -244,11 +244,8 @@ body.reader-active .reader-controls select { min-height: var(--h28); }
 }
 .pack-row { display: grid; grid-template-columns: 18px 1fr auto; gap: 7px; min-height: 34px; align-items: center; }
 .headline-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+  display: block;
   min-height: 78px;
-  align-items: start;
 }
 .headline-content { display: grid; gap: 3px; min-width: 0; }
 .headline-topline {
@@ -258,7 +255,6 @@ body.reader-active .reader-controls select { min-height: var(--h28); }
   gap: 8px;
   min-width: 0;
 }
-.headline-actions { display: inline-flex; align-items: flex-start; gap: 6px; padding-top: 1px; }
 
 .feed-row.excluded, .pack-row.disabled { opacity: .68; }
 
@@ -490,7 +486,7 @@ body.reader-active .reader-controls select { min-height: var(--h28); }
 }
 
 body.reader-active .app-shell { grid-template-columns: 248px 1fr; }
-body.reader-active .reader-layout { grid-template-columns: 228px 1.16fr 304px; gap: 6px; }
+body.reader-active .reader-layout { grid-template-columns: 228px 1fr; gap: 6px; }
 body.reader-active .reader-layout .pane-head,
 body.reader-active .reader-layout .pane-toolbar { padding: 5px 8px; }
 body.reader-active .reader-layout .feed-row,
@@ -502,7 +498,6 @@ body.reader-active .reader-layout .headline-row { padding-left: 8px; padding-rig
   .reader-layout { grid-template-columns: 280px 1fr; }
   body.reader-active .app-shell { grid-template-columns: 264px 1fr; }
   body.reader-active .reader-layout { grid-template-columns: 230px 1fr; }
-  .story-pane { display: none; }
 }
 
 
