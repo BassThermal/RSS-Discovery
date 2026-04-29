@@ -12,8 +12,8 @@
       <div class="sidebar-panel sidebar-identity">
         <div class="brand-title">RSS Discovery</div>
         <div class="nav-list">
-          <button class="nav-btn active" data-mode="discover">Discover</button>
-          <button class="nav-btn" data-mode="reader">Preview</button>
+          <button class="nav-btn active" data-mode="discover">Find</button>
+          <button class="nav-btn" data-mode="reader">Reader</button>
         </div>
       </div>
 
@@ -37,7 +37,7 @@
           <button class="btn primary" id="startBtn">Find feeds</button>
           <div class="row2">
             <button class="btn" id="stopBtn">Stop</button>
-            <button class="btn ghost" id="clearBtn">Reset</button>
+            <button class="btn ghost" id="clearBtn" title="Clear current scan results">Reset</button>
           </div>
           <div class="tiny mono" id="discoverSummary">0 found · 0 included</div>
         </div>
@@ -75,7 +75,7 @@
     <main class="app-main">
       <header class="app-toolbar">
         <div class="toolbar-left">
-          <span class="eyebrow" id="toolbarMode">Discover</span>
+          <span class="eyebrow" id="toolbarMode">Find</span>
           <span class="sep"></span>
           <span class="mono" id="toolbarContext">Idle</span>
           <span class="sep"></span>
@@ -85,7 +85,7 @@
 
         </div>
         <div class="toolbar-right hidden" id="readerActions">
-          <button class="btn micro" id="backDiscoverBtn">Back to Discover</button>
+          <button class="btn micro" id="backDiscoverBtn">Back to Find</button>
         </div>
       </header>
 
@@ -105,7 +105,7 @@
               </select>
               <div class="results-toolbar-actions">
                 <div class="export-group">
-                  <button class="btn micro" id="exportBtn">Export included ▾</button>
+                  <button class="btn micro" id="exportBtn" title="Export included feeds. Ignored and deleted feeds are excluded.">Export included ▾</button>
                   <div class="export-menu" id="exportMenu">
                     <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
                     <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
@@ -113,12 +113,18 @@
                     <button class="btn micro ghost" id="exportJsonBtn">JSON</button>
                   </div>
                 </div>
-                <button class="btn micro" id="toolbarPreviewBtn">Preview</button>
-                <button class="btn micro" id="packSaveBtn">Save</button>
-                <button class="btn micro" id="packSaveAsBtn">Save as</button>
-                <button class="btn micro" id="packLoadBtn">Load</button>
+                <button class="btn micro" id="toolbarPreviewBtn">Open reader</button>
                 <span class="pack-label mono" id="packLabel">Unsaved scan</span>
-                <button class="btn micro ghost" id="toolbarLogBtn">Log</button>
+                <button class="btn micro" id="packSaveBtn">Save</button>
+                <div class="export-group" id="packsGroup">
+                  <button class="btn micro" id="packsMenuBtn">Packs ▾</button>
+                  <div class="export-menu" id="packsMenu">
+                    <button class="btn micro ghost" id="packLoadBtn">Load pack</button>
+                    <button class="btn micro ghost" id="packSaveAsBtn">Save as new pack</button>
+                    <button class="btn micro ghost" id="packDeleteBtn">Delete saved pack</button>
+                  </div>
+                </div>
+                <button class="btn micro ghost" id="toolbarLogBtn">Scan log</button>
               </div>
             </div>
           </div>
@@ -170,7 +176,7 @@
       </dialog>
 
       <footer class="app-status">
-        <div class="status-group mono" id="statusLeft">DISCOVER · Idle</div>
+        <div class="status-group mono" id="statusLeft">FIND · Idle</div>
         <div class="status-group mono" id="statusRight">Session ready</div>
       </footer>
     </main>
