@@ -16,9 +16,6 @@ const state = {
   reader: {
     selectedSourceId: 'all',
     selectedHeadlineId: null,
-    activeStoryId: null,
-    autoAdvanceTimer: null,
-    autoAdvanceMs: 5000,
     sourceSearch: '',
     headlineSearch: '',
     rangeHours: 24,
@@ -80,11 +77,7 @@ const els = {
   headlineCount: document.getElementById('headlineCount'),
   headlineSummary: document.getElementById('headlineSummary'),
   storyInspector: document.getElementById('storyInspector'),
-  headlineOldestBtn: document.getElementById('headlineOldestBtn'),
-  headlinePrevBtn: document.getElementById('headlinePrevBtn'),
-  headlineNextBtn: document.getElementById('headlineNextBtn'),
-  headlineLatestBtn: document.getElementById('headlineLatestBtn'),
-  headlineAutoBtn: document.getElementById('headlineAutoBtn')
+  refreshArticlesBtn: document.getElementById('refreshArticlesBtn')
 };
 
 function assertRequiredEls() {
@@ -195,11 +188,11 @@ function formatAge(ts) {
 }
 
 function formatStoryTime(ts) {
-  if (!ts) return 'Unknown time';
+  if (!ts) return 'No date';
   try {
     return new Date(ts).toLocaleString();
   } catch {
-    return 'Unknown time';
+    return 'No date';
   }
 }
 
@@ -574,7 +567,6 @@ function renderPackList() {
     row.className = `pack-row ${state.reader.selectedSourceId === src.id ? 'selected' : ''}`;
     row.innerHTML = `${iconMarkup(src.domain, src.label, src.iconUrl)}<div class="pack-main"><div class="pack-title clamp-1">${escapeHtml(src.label)}</div><div class="sub mono">${escapeHtml(src.domain)}</div></div><span class="badge">${getVisibleStoryCountForSource(src.id)}</span>`;
     row.addEventListener('click', () => {
-      stopHeadlineAutoAdvance();
       state.reader.selectedSourceId = src.id;
       state.reader.selectedHeadlineId = null;
       renderPackList();
@@ -606,24 +598,18 @@ function renderHeadlineList() {
     return (els.headlineList.innerHTML = '<div class="hint">No readable items were loaded from included feeds.</div>');
   }
   if (!rows.length) {
-    state.reader.activeStoryId = null;
     updateReaderScopeSummary();
-    updateHeadlineNavControls([]);
     return (els.headlineList.innerHTML = '<div class="hint">No articles match source/search/range filters.</div>');
   }
-  if (!rows.some((st) => st.id === state.reader.activeStoryId)) state.reader.activeStoryId = rows[0]?.id || null;
   rows.forEach((st) => {
     const row = document.createElement('div');
-    row.className = `headline-row ${state.reader.activeStoryId === st.id ? 'active' : ''}`;
+    row.className = 'headline-row';
     row.tabIndex = 0;
     row.dataset.storyId = st.id;
     const storyMeta = st.publishedAt
       ? `<span class="mono quiet story-time">${escapeHtml(formatStoryTime(st.publishedAt))}</span><span class="badge age">${formatAge(st.publishedAt)}</span>`
       : '<span class="badge quiet">No date</span>';
     row.innerHTML = `<div class="headline-content"><div class="headline-topline"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><div class="story-meta">${storyMeta}</div></div><a class="headline-title headline-link" dir="auto" href="${escapeHtml(st.url)}" target="_blank" rel="noopener" title="Open article">${escapeHtml(st.title)}</a><div class="headline-excerpt" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><div class="headline-actions"><button class="row-action" data-act="details" title="Show article details">Details</button></div>`;
-    row.addEventListener('focus', () => {
-      state.reader.activeStoryId = st.id;
-    });
     row.addEventListener('click', (e) => {
       if (e.target.closest('a,button')) return;
       window.open(st.url, '_blank', 'noopener');
@@ -638,76 +624,12 @@ function renderHeadlineList() {
     row.querySelector('[data-act="details"]').addEventListener('click', (e) => {
       e.stopPropagation();
       state.reader.selectedHeadlineId = st.id;
-      state.reader.activeStoryId = st.id;
       renderStoryInspector();
-      renderHeadlineList();
       refreshReaderStatus();
     });
     els.headlineList.appendChild(row);
   });
-  updateHeadlineNavControls(rows);
   updateReaderScopeSummary();
-}
-
-function stopHeadlineAutoAdvance() {
-  if (state.reader.autoAdvanceTimer) {
-    clearInterval(state.reader.autoAdvanceTimer);
-    state.reader.autoAdvanceTimer = null;
-  }
-}
-
-function stepHeadline(direction) {
-  const rows = getFilteredHeadlines();
-  if (!rows.length) return;
-  let idx = rows.findIndex((st) => st.id === state.reader.activeStoryId);
-  if (idx < 0) idx = 0;
-  const next = Math.min(rows.length - 1, Math.max(0, idx + direction));
-  state.reader.activeStoryId = rows[next].id;
-  renderHeadlineList();
-  document.querySelector(`.headline-row[data-story-id="${CSS.escape(rows[next].id)}"]`)?.scrollIntoView({ block: 'nearest' });
-}
-
-function jumpHeadline(position) {
-  const rows = getFilteredHeadlines();
-  if (!rows.length) return;
-  const next = position === 'oldest' ? rows[rows.length - 1] : rows[0];
-  state.reader.activeStoryId = next.id;
-  renderHeadlineList();
-  document.querySelector(`.headline-row[data-story-id="${CSS.escape(next.id)}"]`)?.scrollIntoView({ block: 'nearest' });
-}
-
-function toggleHeadlineAuto() {
-  if (state.reader.autoAdvanceTimer) {
-    stopHeadlineAutoAdvance();
-    renderHeadlineList();
-    return;
-  }
-  const rows = getFilteredHeadlines();
-  if (!rows.length) return;
-  if (!state.reader.activeStoryId) state.reader.activeStoryId = rows[0].id;
-  state.reader.autoAdvanceTimer = setInterval(() => {
-    const visible = getFilteredHeadlines();
-    if (!visible.length) return stopHeadlineAutoAdvance();
-    let idx = visible.findIndex((st) => st.id === state.reader.activeStoryId);
-    idx = idx < 0 ? 0 : idx;
-    const nextIdx = Math.min(visible.length - 1, idx + 1);
-    state.reader.activeStoryId = visible[nextIdx].id;
-    renderHeadlineList();
-    document.querySelector(`.headline-row[data-story-id="${CSS.escape(visible[nextIdx].id)}"]`)?.scrollIntoView({ block: 'nearest' });
-  }, state.reader.autoAdvanceMs);
-  renderHeadlineList();
-}
-
-function updateHeadlineNavControls(rows = getFilteredHeadlines()) {
-  const disabled = !rows.length;
-  [els.headlineOldestBtn, els.headlinePrevBtn, els.headlineNextBtn, els.headlineLatestBtn, els.headlineAutoBtn].forEach((btn) => {
-    if (btn) btn.disabled = disabled;
-  });
-  if (els.headlineAutoBtn) els.headlineAutoBtn.classList.toggle('primary', Boolean(state.reader.autoAdvanceTimer));
-  if (els.headlineAutoBtn) {
-    els.headlineAutoBtn.textContent = state.reader.autoAdvanceTimer ? 'Pause' : 'Auto-review';
-    els.headlineAutoBtn.title = 'Step through visible articles every 5 seconds';
-  }
 }
 
 function renderStoryInspector() {
@@ -742,8 +664,6 @@ function syncReaderSelection() {
   if (!state.reader.sources.some((s) => s.id === state.reader.selectedSourceId)) state.reader.selectedSourceId = 'all';
   const visible = getFilteredHeadlines();
   if (state.reader.selectedHeadlineId && !visible.some((s) => s.id === state.reader.selectedHeadlineId)) state.reader.selectedHeadlineId = visible[0]?.id || null;
-  if (state.reader.activeStoryId && !visible.some((s) => s.id === state.reader.activeStoryId)) state.reader.activeStoryId = visible[0]?.id || null;
-  if (!visible.length) stopHeadlineAutoAdvance();
 }
 
 function refreshReaderStatus() {
@@ -796,6 +716,18 @@ async function refreshReaderItemsFromBackend() {
   renderHeadlineList();
   renderStoryInspector();
   refreshReaderStatus();
+}
+
+async function handleRefreshArticles() {
+  log('REFRESH', 'Reloading latest articles', 'ok');
+  if (els.refreshArticlesBtn) els.refreshArticlesBtn.disabled = true;
+  try {
+    await refreshReaderItemsFromBackend();
+  } catch (err) {
+    log('ERROR', `Refresh failed ${String(err?.message || err)}`, 'err');
+  } finally {
+    if (els.refreshArticlesBtn) els.refreshArticlesBtn.disabled = false;
+  }
 }
 
 function xmlEscape(value) {
@@ -997,7 +929,7 @@ async function runDiscoverySession(seeds) {
           } else if (event.stage === 'validating') {
             validated = Number(event.validated || validated);
             total = Number(event.total || total || validated);
-            setDiscoverStatus(`Validating ${validated}/${Math.max(total, validated)}`, `${getIncludedFeeds().length} included`);
+            setDiscoverStatus(`Checking feeds… ${validated} found`, `${getIncludedFeeds().length} included`);
           }
         } else if (event.type === 'error') {
           hasFatalError = true;
@@ -1062,7 +994,6 @@ function setMode(mode) {
   els.readerActions.classList.toggle('hidden', isDiscover);
   els.toolbarMode.textContent = isDiscover ? 'Discover' : 'Preview';
   if (isDiscover) {
-    stopHeadlineAutoAdvance();
     els.toolbarContext.textContent = state.session.running ? 'Running' : (state.session.feeds.length ? 'Complete' : 'Idle');
     els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${getIncludedFeeds().length}`;
     els.statusLeft.textContent = `DISCOVER · ${els.toolbarContext.textContent}`;
@@ -1143,7 +1074,6 @@ function bindEvents() {
   els.exportJsonBtn.addEventListener('click', () => exportIncluded('json'));
 
   els.readerSourceSearch.addEventListener('input', () => {
-    stopHeadlineAutoAdvance();
     state.reader.sourceSearch = els.readerSourceSearch.value.trim();
     renderPackList();
     renderHeadlineList();
@@ -1151,30 +1081,18 @@ function bindEvents() {
     refreshReaderStatus();
   });
   els.headlineSearch.addEventListener('input', () => {
-    stopHeadlineAutoAdvance();
     state.reader.headlineSearch = els.headlineSearch.value.trim();
     renderHeadlineList();
     renderStoryInspector();
     refreshReaderStatus();
   });
   els.rangeSelect.addEventListener('change', () => {
-    stopHeadlineAutoAdvance();
     state.reader.rangeHours = Number(els.rangeSelect.value);
     renderHeadlineList();
     renderStoryInspector();
     refreshReaderStatus();
   });
-  els.headlineOldestBtn?.addEventListener('click', () => jumpHeadline('oldest'));
-  els.headlineLatestBtn?.addEventListener('click', () => jumpHeadline('latest'));
-  els.headlinePrevBtn?.addEventListener('click', () => stepHeadline(-1));
-  els.headlineNextBtn?.addEventListener('click', () => stepHeadline(1));
-  els.headlineAutoBtn?.addEventListener('click', () => toggleHeadlineAuto());
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      stopHeadlineAutoAdvance();
-      renderHeadlineList();
-    }
-  });
+  els.refreshArticlesBtn?.addEventListener('click', handleRefreshArticles);
 }
 
 function init() {
