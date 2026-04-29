@@ -45,24 +45,20 @@ const els = {
   exportJsonBtn: document.getElementById('exportJsonBtn'),
   seedInput: document.getElementById('seedInput'),
   scanModeSelect: document.getElementById('scanModeSelect'),
-  freshnessSelect: document.getElementById('freshnessSelect'),
   discoverFilter: document.getElementById('discoverFilter'),
   discoverSearch: document.getElementById('discoverSearch'),
   startBtn: document.getElementById('startBtn'),
   stopBtn: document.getElementById('stopBtn'),
   clearBtn: document.getElementById('clearBtn'),
-  includeSelectedBtn: document.getElementById('includeSelectedBtn'),
-  ignoreSelectedBtn: document.getElementById('ignoreSelectedBtn'),
-  selectionModeBtn: document.getElementById('selectionModeBtn'),
-  selectionActions: document.getElementById('selectionActions'),
-  selectionCount: document.getElementById('selectionCount'),
-  selectVisibleBtn: document.getElementById('selectVisibleBtn'),
-  clearVisibleBtn: document.getElementById('clearVisibleBtn'),
   openReaderBtn: document.getElementById('openReaderBtn'),
+  toolbarPreviewBtn: document.getElementById('toolbarPreviewBtn'),
+  openLogBtn: document.getElementById('openLogBtn'),
+  toolbarLogBtn: document.getElementById('toolbarLogBtn'),
+  closeLogBtn: document.getElementById('closeLogBtn'),
+  closeDetailsBtn: document.getElementById('closeDetailsBtn'),
+  logDialog: document.getElementById('logDialog'),
+  detailsDialog: document.getElementById('detailsDialog'),
   backDiscoverBtn: document.getElementById('backDiscoverBtn'),
-  metricDiscovered: document.getElementById('metricDiscovered'),
-  metricIncluded: document.getElementById('metricIncluded'),
-  metricIgnored: document.getElementById('metricIgnored'),
   logCount: document.getElementById('logCount'),
   terminal: document.getElementById('terminal'),
   feedList: document.getElementById('feedList'),
@@ -342,7 +338,8 @@ function getFilteredFeeds() {
   const filter = els.discoverFilter.value;
   const q = els.discoverSearch.value.trim().toLowerCase();
   return state.session.feeds.filter((feed) => {
-    const stateOk = filter === 'all' || feed.state === filter;
+    const stateOk = filter === 'all' || filter === '30' || filter === '90' || filter === '365' ? true : feed.state === filter;
+    state.session.freshnessDays = filter === '30' || filter === '90' || filter === '365' ? Number(filter) : null;
     const freshnessOk = feedPassesFreshness(feed);
     const hay = `${feed.title} ${feed.sourceDomain} ${feed.url} ${feed.latestTitle}`.toLowerCase();
     return stateOk && freshnessOk && (!q || hay.includes(q));
@@ -360,7 +357,6 @@ function renderFeedList() {
     row.className = `feed-row ${feed.state === 'ignored' ? 'excluded' : ''} ${feed.id === state.session.selectedFeedId ? 'focused' : ''}`;
     const latestText = feed.latestTitle || 'No items detected';
     row.innerHTML = `
-      <input class="feed-select" aria-label="Select ${escapeHtml(feed.title)}" type="checkbox" data-id="${feed.id}" ${state.session.selectedFeedIds.has(feed.id) ? 'checked' : ''} />
       ${iconMarkup(feed.sourceDomain, feed.title, feed.sourceIcon)}
       <div class="feed-main">
         <div class="title clamp-1">${escapeHtml(feed.title)}</div>
@@ -371,14 +367,15 @@ function renderFeedList() {
         <div class="feed-tertiary">
           <span class="clamp-1">Latest: ${escapeHtml(latestText)}</span>
           <span class="badge age">${escapeHtml(feed.latestAge || 'Unknown time')}</span>
-          <span class="badge state-${feed.state}">${stateLabel}</span>
+          ${feed.state === 'included' ? '' : `<span class="badge state-${feed.state}">${stateLabel}</span>`}
           <span class="badge type">${escapeHtml(feed.format.toUpperCase())}</span>
         </div>
       </div>
       <div class="row-actions">
-        <button class="row-action" data-act="copy" title="Copy feed URL" aria-label="Copy feed URL">Copy URL</button>
-        <button class="row-action" data-act="open" title="Open feed in new tab" aria-label="Open feed in new tab">Open feed</button>
-        <button class="row-action" data-act="toggle" title="${feed.state === 'ignored' ? 'Restore feed' : 'Ignore feed'}" aria-label="${feed.state === 'ignored' ? 'Restore feed' : 'Ignore feed'}">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
+        <button class="row-action" data-act="copy">Copy</button>
+        <button class="row-action" data-act="open">Open</button>
+        <button class="row-action" data-act="toggle">${feed.state === 'ignored' ? 'Restore' : 'Ignore'}</button>
+        <button class="row-action" data-act="details">Details</button>
       </div>
     `;
     row.classList.toggle('selection-enabled', state.session.selectionMode);
@@ -386,12 +383,6 @@ function renderFeedList() {
       if (e.target.matches('input,button')) return;
       state.session.selectedFeedId = feed.id;
       renderFeedList();
-      renderDiscoverInspector();
-    });
-    row.querySelector('input').addEventListener('change', (e) => {
-      if (e.target.checked) state.session.selectedFeedIds.add(feed.id);
-      else state.session.selectedFeedIds.delete(feed.id);
-      updateDiscoverMetrics();
     });
     row.querySelector('[data-act="toggle"]').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -439,40 +430,20 @@ function updateDiscoverMetrics() {
   const total = state.session.feeds.length;
   const included = state.session.feeds.filter((f) => f.state === 'included').length;
   const ignored = state.session.feeds.filter((f) => f.state === 'ignored').length;
-  const selected = state.session.selectedFeedIds.size;
-  els.metricDiscovered.textContent = total;
-  els.metricIncluded.textContent = included;
-  els.metricIgnored.textContent = ignored;
-  els.discoverSummary.textContent = `${included} included · ${ignored} ignored`;
-  els.selectionCount.textContent = `${selected} selected`;
-  els.selectionActions.classList.toggle('hidden', !state.session.selectionMode);
-  els.includeSelectedBtn.disabled = selected === 0;
-  els.ignoreSelectedBtn.disabled = selected === 0;
-  els.clearVisibleBtn.disabled = selected === 0;
-  els.selectionModeBtn.textContent = state.session.selectionMode ? 'Done' : 'Select';
+  els.discoverSummary.textContent = `${total} found · ${included} included`;
   els.exportBtn.disabled = included === 0;
   els.exportBtn.title = included === 0 ? 'No included feeds' : 'Export included feeds';
   if (state.mode === 'discover') els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${included}`;
-}
-
-function updateDiscoverLayout() {
-  const hasSelection = !!state.session.selectedFeedId;
-  const hasWideSpace = window.innerWidth >= 1320;
-  els.discoverPane.classList.toggle('has-inspector', hasSelection && hasWideSpace);
 }
 
 function renderDiscoverInspector() {
   const feed = state.session.feeds.find((f) => f.id === state.session.selectedFeedId);
   if (!feed) {
     els.discoverInspector.innerHTML = '<div class="hint">Select a feed for details.</div>';
-    els.discoverInspector.closest('.discover-inspector-pane')?.classList.remove('has-content');
-    updateDiscoverLayout();
     return;
   }
   const lastUpdated = feed.latestAt ? new Date(feed.latestAt).toLocaleString() : 'Unknown';
   els.discoverInspector.innerHTML = `<div class="block"><div class="k">Feed title</div><div class="v">${escapeHtml(feed.title)}</div></div><div class="block"><div class="k">Domain</div><div class="s">${escapeHtml(feed.sourceDomain || 'Unknown')}</div><div class="k">Feed URL</div><div class="s mono">${escapeHtml(feed.url)}</div><div class="k">Site URL</div><div class="s mono">${escapeHtml(feed.sourceHome || feed.sourceSeed || 'Unknown')}</div></div><div class="block"><div class="k">Latest item</div><div class="v">${escapeHtml(feed.latestTitle || 'No item title')}</div><div class="s mono">${escapeHtml(feed.latestUrl || 'No article URL')}</div><div class="s">Last updated ${escapeHtml(lastUpdated)}</div></div><div class="block"><div class="k">Discovered via</div><div class="s">${escapeHtml(feed.discoveredVia || 'scan')}</div><div class="k">Format</div><div class="s">${escapeHtml(feed.format.toUpperCase())}</div></div><div class="row2"><button class="btn micro" id="insToggle">${feed.state === 'included' ? 'Ignore' : 'Include'}</button><button class="btn micro" id="insCopy">Copy URL</button></div><div class="row2"><button class="btn micro" id="insOpenFeed">Open feed</button><button class="btn micro" id="insOpenArticle" ${feed.latestUrl ? '' : 'disabled'}>Open latest</button></div>`;
-  els.discoverInspector.closest('.discover-inspector-pane')?.classList.add('has-content');
-  updateDiscoverLayout();
   document.getElementById('insToggle').addEventListener('click', () => setFeedState(feed.id, feed.state === 'included' ? 'ignored' : 'included'));
   document.getElementById('insCopy').addEventListener('click', () => copyText(feed.url, 'Copied 1 feed URL'));
   document.getElementById('insOpenFeed').addEventListener('click', () => window.open(feed.url, '_blank', 'noopener'));
@@ -882,34 +853,26 @@ function bindEvents() {
     setDiscoverStatus('Stopped', 'Session interrupted');
   });
   els.clearBtn.addEventListener('click', clearSession);
-  els.includeSelectedBtn.addEventListener('click', () => batchSetSelected('included'));
-  els.ignoreSelectedBtn.addEventListener('click', () => batchSetSelected('ignored'));
-  els.selectionModeBtn.addEventListener('click', () => {
-    state.session.selectionMode = !state.session.selectionMode;
-    if (!state.session.selectionMode) state.session.selectedFeedIds.clear();
-    renderFeedList();
-    updateDiscoverMetrics();
-  });
-  els.openReaderBtn.addEventListener('click', async () => {
+  const openPreview = async () => {
     const included = getIncludedFeeds().length;
     log('RUN', included ? `Preview latest articles from ${included} included feed(s)` : 'Preview latest articles with no included feeds', included ? 'ok' : 'warn');
     setMode('reader');
-    try {
-      await refreshReaderItemsFromBackend();
-    } catch (err) {
-      log('ERROR', `Reader load failed ${String(err?.message || err)}`, 'err');
-    }
+    try { await refreshReaderItemsFromBackend(); } catch (err) { log('ERROR', `Reader load failed ${String(err?.message || err)}`, 'err'); }
+  };
+  els.openReaderBtn.addEventListener('click', async () => {
+    await openPreview();
   });
+  els.toolbarPreviewBtn.addEventListener('click', openPreview);
+  [els.openLogBtn, els.toolbarLogBtn].forEach((btn) => btn.addEventListener('click', () => els.logDialog.showModal()));
+  els.closeLogBtn.addEventListener('click', () => els.logDialog.close());
+  els.closeDetailsBtn.addEventListener('click', () => els.detailsDialog.close());
   els.backDiscoverBtn.addEventListener('click', () => setMode('discover'));
-  [els.discoverFilter, els.discoverSearch, els.freshnessSelect].forEach((el) => el.addEventListener('input', () => {
-    state.session.freshnessDays = els.freshnessSelect.value ? Number(els.freshnessSelect.value) : null;
+  [els.discoverFilter, els.discoverSearch].forEach((el) => el.addEventListener('input', () => {
     rebuildReaderData();
     renderFeedList();
     renderDiscoverInspector();
     updateDiscoverMetrics();
   }));
-  els.selectVisibleBtn.addEventListener('click', () => setVisibleSelection(true));
-  els.clearVisibleBtn.addEventListener('click', () => setVisibleSelection(false));
 
   els.exportBtn.addEventListener('click', () => {
     if (els.exportBtn.disabled) return;
@@ -942,7 +905,6 @@ function bindEvents() {
     renderStoryInspector();
     refreshReaderStatus();
   });
-  window.addEventListener('resize', updateDiscoverLayout);
 }
 
 function init() {
@@ -953,3 +915,9 @@ function init() {
 }
 
 init();
+    row.querySelector('[data-act="details"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.session.selectedFeedId = feed.id;
+      renderDiscoverInspector();
+      els.detailsDialog.showModal();
+    });
