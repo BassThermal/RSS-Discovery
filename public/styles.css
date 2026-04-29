@@ -192,6 +192,17 @@ body.reader-active .reader-controls .label { margin-bottom: 1px; }
 body.reader-active .reader-controls input,
 body.reader-active .reader-controls select { min-height: var(--h28); }
 
+.sidebar-toggle { white-space: nowrap; }
+
+body.sidebar-collapsed .app-shell,
+body.reader-active.sidebar-collapsed .app-shell {
+  grid-template-columns: 1fr;
+}
+
+body.sidebar-collapsed .app-sidebar {
+  display: none;
+}
+
 .pane { min-height: 0; display: grid; grid-template-rows: auto auto 1fr; overflow: hidden; }
 .pane.no-toolbar { grid-template-rows: auto 1fr; }
 

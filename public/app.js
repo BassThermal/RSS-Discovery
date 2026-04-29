@@ -24,7 +24,8 @@ const state = {
   logs: [],
   currentPackId: null,
   packDirty: false,
-  savedPacks: []
+  savedPacks: [],
+  sidebarCollapsed: false
 };
 
 const els = {
@@ -88,7 +89,8 @@ const els = {
   packDeleteBtn: document.getElementById('packDeleteBtn'),
   packsDialog: document.getElementById('packsDialog'),
   packsDialogBody: document.getElementById('packsDialogBody'),
-  closePacksBtn: document.getElementById('closePacksBtn')
+  closePacksBtn: document.getElementById('closePacksBtn'),
+  sidebarToggleBtn: document.getElementById('sidebarToggleBtn')
 };
 
 function assertRequiredEls() {
@@ -124,6 +126,38 @@ function assertRequiredEls() {
     host.prepend(fatal);
   }
   return false;
+}
+
+
+const SIDEBAR_PREFERENCE_KEY = 'rssDiscovery.sidebarCollapsed.v1';
+
+function updateSidebarToggleUi() {
+  if (!els.sidebarToggleBtn) return;
+  const collapsed = !!state.sidebarCollapsed;
+  els.sidebarToggleBtn.textContent = collapsed ? 'Show panel' : 'Hide panel';
+  els.sidebarToggleBtn.title = collapsed ? 'Show left control panel' : 'Hide left control panel';
+  els.sidebarToggleBtn.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+}
+
+function setSidebarCollapsed(collapsed) {
+  state.sidebarCollapsed = !!collapsed;
+  document.body.classList.toggle('sidebar-collapsed', state.sidebarCollapsed);
+  localStorage.setItem(SIDEBAR_PREFERENCE_KEY, state.sidebarCollapsed ? '1' : '0');
+  updateSidebarToggleUi();
+}
+
+function toggleSidebar() {
+  setSidebarCollapsed(!state.sidebarCollapsed);
+}
+
+function loadSidebarPreference() {
+  const stored = localStorage.getItem(SIDEBAR_PREFERENCE_KEY);
+  setSidebarCollapsed(stored === '1');
+}
+
+function isTypingTarget(target) {
+  if (!target || typeof target.closest !== 'function') return false;
+  return !!target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [contenteditable]');
 }
 
 const parseDateMaybe = (value) => {
@@ -1160,10 +1194,19 @@ function bindEvents() {
       refreshReaderStatus();
   });
   els.refreshArticlesBtn?.addEventListener('click', handleRefreshArticles);
+  els.sidebarToggleBtn?.addEventListener('click', toggleSidebar);
+  document.addEventListener('keydown', (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+    if (String(event.key || '').toLowerCase() !== 'b') return;
+    if (isTypingTarget(event.target)) return;
+    event.preventDefault();
+    toggleSidebar();
+  });
 }
 
 function init() {
   if (!assertRequiredEls()) return;
+  loadSidebarPreference();
   bindEvents();
   state.savedPacks = loadSavedPacks();
   updatePackUi();
