@@ -309,7 +309,7 @@ function deriveReaderSourcesFromFeeds(feeds) {
     iconUrl: feed.sourceIcon || toFaviconUrl(feed.sourceDomain)
   }));
   const total = rows.reduce((n, r) => n + r.stories, 0);
-  return [{ id: 'all', label: 'All included feeds', domain: 'session', feedUrl: '', active: true, stories: total }, ...rows];
+  return [{ id: 'all', label: 'All sources', domain: 'session', feedUrl: '', active: true, stories: total }, ...rows];
 }
 
 function deriveStoriesFromFeeds(feeds) {
@@ -508,7 +508,7 @@ function getFilteredHeadlines() {
 function updateReaderScopeSummary() {
   const activeSources = state.session.feeds.filter((f) => f.state === 'included' && feedPassesFreshness(f)).length;
   const visibleStories = getFilteredHeadlines().length;
-  els.readerScopeSources.textContent = `${activeSources} included ${activeSources === 1 ? 'feed' : 'feeds'}`;
+  els.readerScopeSources.textContent = `${activeSources} ${activeSources === 1 ? 'source' : 'sources'}`;
   els.readerScopeStories.textContent = `${visibleStories} visible ${visibleStories === 1 ? 'article' : 'articles'}`;
 }
 
@@ -516,8 +516,8 @@ function renderPackList() {
   const sources = getFilteredSources();
   const included = state.session.feeds.filter((f) => f.state === 'included' && feedPassesFreshness(f)).length;
   els.packList.innerHTML = '';
-  els.packCount.textContent = `${included} included feeds`;
-  els.packSummary.textContent = included ? `Included feeds ${included}` : 'No included feeds yet. Find feeds first.';
+  els.packCount.textContent = `${included} sources`;
+  els.packSummary.textContent = included ? `All sources · ${included}` : 'No sources yet. Find feeds first.';
   if (!sources.length) {
     updateReaderScopeSummary();
     return (els.packList.innerHTML = '<div class="hint">No source rows match search.</div>');
@@ -543,7 +543,8 @@ function renderHeadlineList() {
   const rows = getFilteredHeadlines();
   els.headlineList.innerHTML = '';
   els.headlineCount.textContent = `${rows.length} shown`;
-  els.headlineSummary.textContent = `Range ${state.reader.rangeHours}h · Source ${state.reader.selectedSourceId} · Loaded ${state.reader.stories.length}`;
+  const sourceLabel = state.reader.sources.find((s) => s.id === state.reader.selectedSourceId)?.label || 'All sources';
+  els.headlineSummary.textContent = `Time range ${state.reader.rangeHours}h · ${sourceLabel} · Loaded ${state.reader.stories.length}`;
   if (!state.session.feeds.some((f) => f.state === 'included')) {
     updateReaderScopeSummary();
     return (els.headlineList.innerHTML = '<div class="hint">No included feeds yet. Include feeds in Discover.</div>');
@@ -558,16 +559,20 @@ function renderHeadlineList() {
   }
   rows.forEach((st) => {
     const row = document.createElement('div');
-    row.className = `headline-row ${state.reader.selectedHeadlineId === st.id ? 'selected' : ''}`;
+    row.className = 'headline-row';
     row.tabIndex = 0;
-    row.innerHTML = `<div class="headline-main"><div class="headline-meta"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><span class="mono quiet story-time">${escapeHtml(formatStoryTime(st.publishedAt))}</span></div><a class="title clamp-2 headline-link" dir="auto" href="${escapeHtml(st.url)}" target="_blank" rel="noopener" title="Open article">${escapeHtml(st.title)}</a><div class="sub clamp-1" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><span class="badge age">${formatAge(st.publishedAt)}</span>`;
-    row.addEventListener('click', () => {
+    row.innerHTML = `<div class="headline-main"><div class="headline-meta"><div class="source-meta">${iconMarkup(st.sourceDomain, st.sourceLabel, st.sourceIcon)}<span class="headline-source">${escapeHtml(st.sourceLabel)}</span><span class="mono quiet source-domain">${escapeHtml(st.sourceDomain)}</span></div><span class="mono quiet story-time">${escapeHtml(formatStoryTime(st.publishedAt))}</span></div><a class="title clamp-2 headline-link" dir="auto" href="${escapeHtml(st.url)}" target="_blank" rel="noopener" title="Open article">${escapeHtml(st.title)}</a><div class="sub clamp-1" dir="auto">${escapeHtml(st.excerpt || '')}</div></div><div class="headline-actions"><button class="row-action" data-act="details" title="Show article details">Details</button><span class="badge age">${formatAge(st.publishedAt)}</span></div>`;
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('a,button')) return;
+      window.open(st.url, '_blank', 'noopener');
+    });
+    row.querySelector('.headline-link').addEventListener('click', (e) => e.stopPropagation());
+    row.querySelector('[data-act="details"]').addEventListener('click', (e) => {
+      e.stopPropagation();
       state.reader.selectedHeadlineId = st.id;
-      renderHeadlineList();
       renderStoryInspector();
       refreshReaderStatus();
     });
-    row.querySelector('.headline-link').addEventListener('click', (e) => e.stopPropagation());
     els.headlineList.appendChild(row);
   });
   updateReaderScopeSummary();
@@ -575,7 +580,7 @@ function renderHeadlineList() {
 
 function renderStoryInspector() {
   const st = state.reader.stories.find((s) => s.id === state.reader.selectedHeadlineId);
-  if (!st) return (els.storyInspector.innerHTML = '<div class="hint">Select an article to inspect details.</div>');
+  if (!st) return (els.storyInspector.innerHTML = '<div class="hint">Choose Details on an article row to inspect it here.</div>');
   els.storyInspector.innerHTML = `<div class="block"><div class="k">Story</div><div class="v">${escapeHtml(st.title)}</div><div class="s mono">${escapeHtml(st.url)}</div></div><div class="block"><div class="k">Source</div><div class="s">${escapeHtml(st.sourceLabel)} · ${escapeHtml(st.sourceDomain)}</div><div class="s mono">${escapeHtml(st.feedUrl)}</div><div class="s">Published ${escapeHtml(formatStoryTime(st.publishedAt))}</div></div><div class="block"><div class="k">Excerpt</div><div class="s">${escapeHtml(st.excerpt || 'No excerpt available.')}</div></div><div class="row2"><button class="btn micro" id="openStoryBtn">Open article</button><button class="btn micro" id="openStoryFeedBtn">Open source feed</button></div>`;
   document.getElementById('openStoryBtn').addEventListener('click', () => window.open(st.url, '_blank', 'noopener'));
   document.getElementById('openStoryFeedBtn').addEventListener('click', () => window.open(st.feedUrl, '_blank', 'noopener'));
