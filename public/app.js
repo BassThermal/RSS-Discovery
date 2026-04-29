@@ -79,6 +79,41 @@ const els = {
   storyInspector: document.getElementById('storyInspector')
 };
 
+function assertRequiredEls() {
+  const required = [
+    'seedInput',
+    'scanModeSelect',
+    'discoverFilter',
+    'discoverSearch',
+    'startBtn',
+    'stopBtn',
+    'clearBtn',
+    'feedList',
+    'feedListCount',
+    'discoverSummary',
+    'statusLeft',
+    'statusRight',
+    'toolbarContext',
+    'toolbarSecondary',
+    'terminal',
+    'logCount'
+  ];
+  const missing = required.filter((key) => !els[key]);
+  if (!missing.length) return true;
+  console.error('Fatal: missing required DOM elements:', missing);
+  const host = document.body || document.documentElement;
+  if (host) {
+    const fatal = document.createElement('div');
+    fatal.style.padding = '12px';
+    fatal.style.background = '#3a1111';
+    fatal.style.color = '#ffd8d8';
+    fatal.style.fontFamily = 'monospace';
+    fatal.textContent = `Fatal UI error: missing required elements: ${missing.join(', ')}`;
+    host.prepend(fatal);
+  }
+  return false;
+}
+
 const parseDateMaybe = (value) => {
   if (!value) return null;
   const ts = Date.parse(value);
@@ -727,16 +762,26 @@ async function runDiscoverySession(seeds) {
   state.session.stopped = false;
   state.session.seeds = seeds.length;
   state.session.scanMode = els.scanModeSelect.value || 'standard';
-  state.session.freshnessDays = els.freshnessSelect.value ? Number(els.freshnessSelect.value) : null;
-  setDiscoverStatus('Finding feeds', `Seeds ${seeds.length} · Included 0`);
-  log('RUN', `Discovery session started for ${seeds.length} website(s)`, 'ok');
+  state.session.freshnessDays = null;
+  setDiscoverStatus('Starting', 'Preparing scan…');
+  log('RUN', 'Find feeds clicked', 'ok');
+  els.toolbarContext.textContent = 'Starting';
+  els.toolbarSecondary.textContent = 'Reading input…';
+  els.feedList.innerHTML = '<div class="hint">Scanning…</div>';
+  els.startBtn.disabled = true;
+  els.stopBtn.disabled = false;
 
   const feedByUrl = new Map();
   let validated = 0;
   let total = 0;
+  let hasFatalError = false;
+  const timeoutMs = state.session.scanMode === 'deep' ? 90000 : 45000;
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(new Error('discover-timeout')), timeoutMs);
 
   // Frontend abort closes the stream request cleanly; backend may continue processing briefly.
   state.session.streamController = new AbortController();
+  state.session.streamController.signal.addEventListener('abort', () => timeoutController.abort(new Error('discover-aborted')));
 
   try {
     const res = await fetch('/api/discover-stream', {
@@ -747,9 +792,28 @@ async function runDiscoverySession(seeds) {
         scanMode: state.session.scanMode,
         freshnessDays: state.session.freshnessDays
       }),
-      signal: state.session.streamController.signal
+      signal: timeoutController.signal
     });
-    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const bodyText = await res.text().catch(() => '');
+      throw new Error(`discover-stream HTTP ${res.status}${bodyText ? `: ${bodyText.slice(0, 200)}` : ''}`);
+    }
+    if (!res.body) {
+      log('WARN', 'Streaming body unavailable. Falling back to /api/discover.', 'warn');
+      const fallback = await apiPost('/api/discover', {
+        seeds,
+        scanMode: state.session.scanMode,
+        freshnessDays: state.session.freshnessDays
+      });
+      (fallback.feeds || []).forEach((feed) => {
+        const normalized = normalizeFeed(feed);
+        if (normalized && !feedByUrl.has(normalized.url)) {
+          feedByUrl.set(normalized.url, normalized);
+          state.session.feeds.push(normalized);
+        }
+      });
+      return;
+    }
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -765,7 +829,10 @@ async function runDiscoverySession(seeds) {
       lines.forEach((line) => {
         if (!line.trim()) return;
         let event;
-        try { event = JSON.parse(line); } catch { return; }
+        try { event = JSON.parse(line); } catch {
+          log('WARN', `NDJSON parse failed for line: ${line.slice(0, 180)}`, 'warn');
+          return;
+        }
 
         if (event.type === 'log') {
           log(event.code || 'RUN', event.message || '', event.level === 'warn' ? 'warn' : event.level === 'error' ? 'err' : 'ok');
@@ -792,23 +859,42 @@ async function runDiscoverySession(seeds) {
             setDiscoverStatus(`Validating ${validated}/${Math.max(total, validated)}`, `${getIncludedFeeds().length} included`);
           }
         } else if (event.type === 'error') {
+          hasFatalError = true;
+          els.feedList.innerHTML = `<div class="hint">Scan failed: ${escapeHtml(event.error || 'discover-stream-failed')}</div>`;
+          setDiscoverStatus('Failed', event.error || 'discover-stream-failed');
+          log('ERROR', `Backend error: ${event.error || 'discover-stream-failed'}`, 'err');
+          state.session.running = false;
           throw new Error(event.error || 'discover-stream-failed');
         }
       });
     }
   } catch (err) {
-    if (String(err?.name || '') === 'AbortError') {
+    console.error('Discovery start failed', err);
+    if (timeoutController.signal.aborted && String(err?.message || '').includes('discover-timeout')) {
+      hasFatalError = true;
+      log('ERROR', 'Scan timed out before results arrived. Try Quick scan or check the URL.', 'err');
+      setDiscoverStatus('Timed out', 'No results before timeout');
+      els.feedList.innerHTML = '<div class="hint">Scan timed out before results arrived. Try Quick scan or check the URL.</div>';
+    } else if (String(err?.name || '') === 'AbortError') {
       log('STOP', 'Scan stopped by user request', 'warn');
     } else {
-      log('ERROR', `Discovery failed ${String(err?.message || err)}`, 'err');
+      hasFatalError = true;
+      const msg = `Scan failed: ${String(err?.message || err)}`;
+      log('ERROR', msg, 'err');
+      setDiscoverStatus('Failed', msg);
+      els.feedList.innerHTML = `<div class="hint">${escapeHtml(msg)}</div>`;
     }
+  } finally {
+    clearTimeout(timeoutId);
+    state.session.running = false;
+    state.session.streamController = null;
+    els.startBtn.disabled = false;
+    els.stopBtn.disabled = true;
   }
-
-  state.session.running = false;
-  state.session.streamController = null;
-  if (!state.session.feeds.length) {
+  if (!state.session.feeds.length && !hasFatalError) {
     log('DONE', 'No valid feed records found', 'warn');
-    setDiscoverStatus('Complete', '0 feeds discovered');
+    setDiscoverStatus('Complete', 'No feeds found');
+    els.feedList.innerHTML = '<div class="hint">No feeds found.</div>';
   } else {
     state.session.feeds.sort((a, b) => (b.latestAt || 0) - (a.latestAt || 0) || a.title.localeCompare(b.title));
     log('DONE', `${state.session.feeds.length} valid feeds discovered`, 'ok');
@@ -848,9 +934,28 @@ function setMode(mode) {
 function bindEvents() {
   els.navButtons.forEach((btn) => btn.addEventListener('click', () => setMode(btn.dataset.mode)));
   els.startBtn.addEventListener('click', async () => {
-    const seeds = parseSeeds(els.seedInput.value);
-    if (!seeds.length) return log('REJECT', 'No websites provided. Scan not started.', 'err');
-    await runDiscoverySession(seeds);
+    try {
+      const seeds = parseSeeds(els.seedInput.value);
+      if (!seeds.length) {
+        const msg = 'No valid URLs found. Paste one or more website or feed URLs.';
+        console.error(msg);
+        log('REJECT', msg, 'err');
+        setDiscoverStatus('Ready', msg);
+        els.feedList.innerHTML = `<div class="hint">${escapeHtml(msg)}</div>`;
+        return;
+      }
+      await runDiscoverySession(seeds);
+    } catch (err) {
+      console.error('Start handler error', err);
+      const msg = `Scan failed: ${String(err?.message || err)}`;
+      log('ERROR', msg, 'err');
+      setDiscoverStatus('Failed', msg);
+      els.feedList.innerHTML = `<div class="hint">${escapeHtml(msg)}</div>`;
+      state.session.running = false;
+      state.session.streamController = null;
+      els.startBtn.disabled = false;
+      els.stopBtn.disabled = true;
+    }
   });
   els.stopBtn.addEventListener('click', () => {
     state.session.running = false;
@@ -866,14 +971,16 @@ function bindEvents() {
     setMode('reader');
     try { await refreshReaderItemsFromBackend(); } catch (err) { log('ERROR', `Reader load failed ${String(err?.message || err)}`, 'err'); }
   };
-  els.openReaderBtn.addEventListener('click', async () => {
+  els.openReaderBtn?.addEventListener('click', async () => {
     await openPreview();
   });
-  els.toolbarPreviewBtn.addEventListener('click', openPreview);
-  [els.openLogBtn, els.toolbarLogBtn].forEach((btn) => btn.addEventListener('click', () => els.logDialog.showModal()));
-  els.closeLogBtn.addEventListener('click', () => els.logDialog.close());
-  els.closeDetailsBtn.addEventListener('click', () => els.detailsDialog.close());
-  els.backDiscoverBtn.addEventListener('click', () => setMode('discover'));
+  if (els.toolbarPreviewBtn) els.toolbarPreviewBtn.addEventListener('click', openPreview);
+  [els.openLogBtn, els.toolbarLogBtn].forEach((btn) => btn?.addEventListener('click', () => {
+    if (els.logDialog?.showModal) els.logDialog.showModal();
+  }));
+  if (els.closeLogBtn) els.closeLogBtn.addEventListener('click', () => els.logDialog?.close?.());
+  if (els.closeDetailsBtn) els.closeDetailsBtn.addEventListener('click', () => els.detailsDialog?.close?.());
+  els.backDiscoverBtn?.addEventListener('click', () => setMode('discover'));
   [els.discoverFilter, els.discoverSearch].forEach((el) => el.addEventListener('input', () => {
     rebuildReaderData();
     renderFeedList();
@@ -915,6 +1022,7 @@ function bindEvents() {
 }
 
 function init() {
+  if (!assertRequiredEls()) return;
   bindEvents();
   clearSession();
   setMode('discover');

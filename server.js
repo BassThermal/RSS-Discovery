@@ -126,18 +126,29 @@ function getScanConfig(scanMode = 'standard') {
 }
 
 async function fetchText(url, options = {}) {
-  const { cacheBucket = 'feedFetch' } = options;
+  const { cacheBucket = 'feedFetch', timeoutMs = 15000 } = options;
   const targetMap = cache[cacheBucket] || cache.feedFetch;
   const ttl = CACHE_TTL[cacheBucket] || CACHE_TTL.feedFetch;
   const cached = getCache(targetMap, url);
   if (cached) return { ...cached, fromCache: true };
 
-  const res = await fetch(url, {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(new Error(`fetch-timeout ${url}`)), timeoutMs);
+  let res;
+  try {
+    res = await fetch(url, {
     headers: {
       'user-agent': 'RSS-Discovery/1.0 (+local-proxy)',
       accept: 'text/html,application/xml,text/xml,application/rss+xml,application/atom+xml,application/feed+json,application/json,*/*'
-    }
-  });
+    },
+    signal: controller.signal
+    });
+  } catch (err) {
+    if (controller.signal.aborted) throw new Error(`fetch-timeout ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const payload = { text: await res.text(), contentType: res.headers.get('content-type') || '' };
@@ -647,6 +658,11 @@ app.post('/api/discover', async (req, res) => {
 app.post('/api/discover-stream', async (req, res) => {
   const body = getDiscoverRequestBody(req);
   if (!body.seeds.length) return res.status(400).json({ error: 'No valid seeds supplied' });
+  console.log('[discover-stream] request', {
+    seedCount: body.seeds.length,
+    scanMode: body.scanMode,
+    firstSeed: body.seeds[0] || null
+  });
 
   res.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
   res.setHeader('cache-control', 'no-cache, no-transform');
@@ -660,9 +676,19 @@ app.post('/api/discover-stream', async (req, res) => {
     send({ type: 'done', feeds: result.feeds.length, scanMode: result.scanMode });
     return res.end();
   } catch (err) {
+    console.error('[discover-stream] error', err);
     send({ type: 'error', error: err.message || 'discover-failed' });
     return res.end();
   }
+});
+
+app.get('/api/health', (_, res) => {
+  res.json({
+    ok: true,
+    service: 'rss-discovery',
+    node: process.version,
+    time: new Date().toISOString()
+  });
 });
 
 app.post('/api/reader-items', async (req, res) => {
