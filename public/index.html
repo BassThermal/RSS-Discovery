@@ -34,27 +34,12 @@
             </select>
           </div>
 
-          <div class="control-field compact-field">
-            <div class="field-label">Freshness</div>
-            <select id="freshnessSelect">
-              <option value="">Any activity</option>
-              <option value="30">Active in 30 days</option>
-              <option value="90">Active in 90 days</option>
-              <option value="365">Active in 1 year</option>
-            </select>
-          </div>
-
           <button class="btn primary" id="startBtn">Find feeds</button>
           <div class="row2">
             <button class="btn" id="stopBtn">Stop</button>
-            <button class="btn danger" id="clearBtn">Clear</button>
+            <button class="btn ghost" id="clearBtn">Clear</button>
           </div>
-        </div>
-
-        <div class="sidebar-panel metric-grid">
-          <div class="metric"><div class="k">Found</div><div class="v" id="metricDiscovered">0</div></div>
-          <div class="metric"><div class="k">Included</div><div class="v" id="metricIncluded">0</div></div>
-          <div class="metric"><div class="k">Ignored</div><div class="v" id="metricIgnored">0</div></div>
+          <div class="tiny mono" id="discoverSummary">0 found · 0 included</div>
         </div>
       </div>
 
@@ -98,7 +83,8 @@
           <span class="mono" id="toolbarSecondary">Session ready</span>
         </div>
         <div class="toolbar-right" id="discoverActions">
-          <button class="btn micro" id="openReaderBtn">Preview latest articles</button>
+          <button class="btn micro" id="openReaderBtn">Preview</button>
+          <button class="btn micro ghost" id="openLogBtn">Log</button>
         </div>
         <div class="toolbar-right hidden" id="readerActions">
           <button class="btn micro" id="backDiscoverBtn">Back to Discover</button>
@@ -112,21 +98,14 @@
             <div class="toolbar-inline discover-toolbar">
               <input id="discoverSearch" placeholder="Search title, domain, or feed URL" />
               <select id="discoverFilter">
-                <option value="all">All</option>
-                <option value="included">Included</option>
+                <option value="all">All activity</option>
+                <option value="30">Active in 30 days</option>
+                <option value="90">Active in 90 days</option>
+                <option value="365">Active in 1 year</option>
                 <option value="ignored">Ignored</option>
                 <option value="problem">Problem</option>
               </select>
               <div class="results-toolbar-actions">
-                <span class="tiny mono" id="discoverSummary">0 included · 0 ignored</span>
-                <button class="btn micro ghost" id="selectionModeBtn">Select</button>
-                <div class="selection-actions hidden" id="selectionActions">
-                  <span class="tiny mono" id="selectionCount">0 selected</span>
-                  <button class="btn micro ghost" id="selectVisibleBtn">Select shown</button>
-                  <button class="btn micro ghost" id="clearVisibleBtn">Clear</button>
-                  <button class="btn micro" id="includeSelectedBtn">Include</button>
-                  <button class="btn micro danger" id="ignoreSelectedBtn">Ignore</button>
-                </div>
                 <div class="export-group">
                   <button class="btn micro" id="exportBtn">Export included ▾</button>
                   <div class="export-menu" id="exportMenu">
@@ -136,22 +115,12 @@
                     <button class="btn micro ghost" id="exportJsonBtn">JSON</button>
                   </div>
                 </div>
+                <button class="btn micro" id="toolbarPreviewBtn">Preview</button>
+                <button class="btn micro ghost" id="toolbarLogBtn">Log</button>
               </div>
             </div>
           </div>
           <div class="pane-body feed-list" id="feedList"></div>
-        </section>
-
-        <aside class="pane no-toolbar discover-inspector-pane">
-          <div class="pane-head"><div class="pane-title">Feed details</div></div>
-          <div class="pane-body inspector" id="discoverInspector"></div>
-        </aside>
-
-        <section class="pane no-toolbar log-pane">
-          <details class="log-details">
-            <summary class="pane-head"><span class="pane-title">Scan log</span><span class="pane-meta mono" id="logCount">0 actions</span></summary>
-            <div class="pane-body terminal" id="terminal"></div>
-          </details>
         </section>
       </section>
 
@@ -173,6 +142,19 @@
           <div class="pane-body inspector" id="storyInspector"></div>
         </aside>
       </section>
+
+      <dialog id="detailsDialog" class="overlay-dialog">
+        <div class="pane">
+          <div class="pane-head"><div class="pane-title">Feed details</div><button class="btn micro ghost" id="closeDetailsBtn">Close</button></div>
+          <div class="pane-body inspector" id="discoverInspector"></div>
+        </div>
+      </dialog>
+      <dialog id="logDialog" class="overlay-dialog">
+        <div class="pane">
+          <div class="pane-head"><div class="pane-title">Scan log</div><div class="pane-meta mono" id="logCount">0 actions</div><button class="btn micro ghost" id="closeLogBtn">Close</button></div>
+          <div class="pane-body terminal" id="terminal"></div>
+        </div>
+      </dialog>
 
       <footer class="app-status">
         <div class="status-group mono" id="statusLeft">DISCOVER · Idle</div>
