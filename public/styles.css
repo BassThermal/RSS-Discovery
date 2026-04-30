@@ -602,6 +602,24 @@ body.reader-active .reader-layout .headline-row { padding-left: 8px; padding-rig
 .overlay-dialog { width: min(920px, 92vw); max-height: 84vh; border: 1px solid var(--border-strong); background: var(--panel); color: inherit; padding: 0; }
 .overlay-dialog::backdrop { background: rgb(0 0 0 / 45%); }
 
+#logDialog {
+  width: min(1180px, calc(100vw - 96px));
+  height: min(760px, calc(100vh - 96px));
+  max-height: calc(100vh - 96px);
+  overflow: hidden;
+}
+
+#logDialog > .pane {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+#logDialog .terminal {
+  min-height: 0;
+  overflow: auto;
+}
+
 @media (max-width: 980px) {
   .feed-primary { grid-template-columns: 1fr; }
   .feed-actions { justify-content: flex-start; }
