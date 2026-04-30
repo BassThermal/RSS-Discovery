@@ -25,7 +25,8 @@ const state = {
   currentPackId: null,
   packDirty: false,
   savedPacks: [],
-  sidebarCollapsed: false
+  sidebarCollapsed: false,
+  logFilter: 'summary'
 };
 
 const els = {
@@ -90,7 +91,8 @@ const els = {
   packsDialog: document.getElementById('packsDialog'),
   packsDialogBody: document.getElementById('packsDialogBody'),
   closePacksBtn: document.getElementById('closePacksBtn'),
-  sidebarToggleBtn: document.getElementById('sidebarToggleBtn')
+  sidebarRailToggleBtn: document.getElementById('sidebarRailToggleBtn'),
+  logFilterGroup: document.getElementById('logFilterGroup')
 };
 
 function assertRequiredEls() {
@@ -132,11 +134,11 @@ function assertRequiredEls() {
 const SIDEBAR_PREFERENCE_KEY = 'rssDiscovery.sidebarCollapsed.v1';
 
 function updateSidebarToggleUi() {
-  if (!els.sidebarToggleBtn) return;
+  if (!els.sidebarRailToggleBtn) return;
   const collapsed = !!state.sidebarCollapsed;
-  els.sidebarToggleBtn.textContent = collapsed ? 'Show panel' : 'Hide panel';
-  els.sidebarToggleBtn.title = collapsed ? 'Show left control panel' : 'Hide left control panel';
-  els.sidebarToggleBtn.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+  els.sidebarRailToggleBtn.textContent = collapsed ? '›' : '‹';
+  els.sidebarRailToggleBtn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  els.sidebarRailToggleBtn.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
 }
 
 function setSidebarCollapsed(collapsed) {
@@ -255,11 +257,25 @@ function log(code, message, cls = '') {
   renderTerminal();
 }
 
+function classifyLogCode(code) {
+  if (code === 'VALID') return 'valid';
+  if (code === 'REJECT' || code === 'SKIP') return 'rejects';
+  if (['RUN', 'FETCH', 'DETECT', 'CAND', 'DONE'].includes(code)) return 'summary';
+  return 'all';
+}
+
 function renderTerminal() {
   els.terminal.innerHTML = '';
-  els.logCount.textContent = `${state.logs.length} actions`;
+  const filtered = state.logFilter === 'all'
+    ? state.logs
+    : state.logs.filter((row) => {
+      const bucket = classifyLogCode(row.code);
+      if (state.logFilter === 'summary') return bucket === 'summary' || bucket === 'valid';
+      return bucket === state.logFilter;
+    });
+  els.logCount.textContent = `${filtered.length} actions`;
   if (!state.logs.length) return (els.terminal.innerHTML = '<div class="hint">Session idle. Awaiting scan.</div>');
-  state.logs.slice(-300).forEach((row) => {
+  filtered.slice(-300).forEach((row) => {
     const line = document.createElement('div');
     line.className = 'log-row';
     line.innerHTML = `<div>${row.ts}</div><div class="log-code ${row.cls}">${row.code}</div><div>${escapeHtml(row.message)}</div>`;
@@ -271,8 +287,6 @@ function renderTerminal() {
 function setDiscoverStatus(context, right) {
   els.toolbarContext.textContent = context;
   els.toolbarSecondary.textContent = right;
-  if (state.mode === 'discover') els.statusLeft.textContent = `FIND · ${context}`;
-  els.statusRight.textContent = right;
 }
 
 async function apiPost(path, payload) {
@@ -387,10 +401,14 @@ const PACKS_STORAGE_KEY = 'rssDiscovery.packs.v1';
 function updatePackUi() {
   if (!els.packLabel) return;
   const current = state.savedPacks.find((p) => p.id === state.currentPackId);
-  if (!current) els.packLabel.textContent = 'Unsaved scan';
-  else if (state.packDirty) els.packLabel.textContent = `Pack: ${current.name} · unsaved changes`;
-  else els.packLabel.textContent = `Pack: ${current.name} · saved`;
-  if (els.packSaveBtn) els.packSaveBtn.textContent = state.packDirty ? 'Save changes' : 'Save';
+  if (!current && !state.session.feeds.length) els.packLabel.textContent = 'No saved pack';
+  else if (!current) els.packLabel.textContent = 'Unsaved pack';
+  else if (state.packDirty) els.packLabel.textContent = `${current.name} · unsaved changes`;
+  else els.packLabel.textContent = `Pack: ${current.name}`;
+  if (els.packSaveBtn) {
+    if (!current) els.packSaveBtn.textContent = 'Save pack';
+    else els.packSaveBtn.textContent = state.packDirty ? 'Save changes' : 'Save';
+  }
   if (els.packDeleteBtn) els.packDeleteBtn.disabled = !current;
 }
 
@@ -765,8 +783,7 @@ function refreshReaderStatus() {
   const included = getIncludedFeeds().length;
   els.toolbarContext.textContent = `${included} sources`;
   els.toolbarSecondary.textContent = `${visible} articles`;
-  els.statusLeft.textContent = 'READER · Active';
-  els.statusRight.textContent = `Loaded ${state.reader.stories.length} · Range ${state.reader.rangeHours}h`;
+    
   updateReaderScopeSummary();
 }
 
@@ -1089,8 +1106,6 @@ function setMode(mode) {
   if (isDiscover) {
     els.toolbarContext.textContent = state.session.running ? 'Running' : (state.session.feeds.length ? 'Complete' : 'Idle');
     els.toolbarSecondary.textContent = `Seeds ${state.session.seeds || 0} · Included ${getIncludedFeeds().length}`;
-    els.statusLeft.textContent = `FIND · ${els.toolbarContext.textContent}`;
-    els.statusRight.textContent = els.toolbarSecondary.textContent;
   } else {
     syncReaderSelection();
     refreshReaderStatus();
@@ -1165,7 +1180,7 @@ function bindEvents() {
     els.exportMenu.classList.toggle('open');
   });
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.export-group')) {
+    if (!e.target.closest('.menu-group')) {
       els.exportMenu.classList.remove('open');
       els.packsMenu?.classList.remove('open');
     }
@@ -1194,7 +1209,16 @@ function bindEvents() {
       refreshReaderStatus();
   });
   els.refreshArticlesBtn?.addEventListener('click', handleRefreshArticles);
-  els.sidebarToggleBtn?.addEventListener('click', toggleSidebar);
+  els.sidebarRailToggleBtn?.addEventListener('click', toggleSidebar);
+  els.logFilterGroup?.addEventListener('click', (event) => {
+    const btn = event.target.closest('[data-log-filter]');
+    if (!btn) return;
+    state.logFilter = btn.dataset.logFilter;
+    els.logFilterGroup.querySelectorAll('[data-log-filter]').forEach((node) => {
+      node.classList.toggle('active', node.dataset.logFilter === state.logFilter);
+    });
+    renderTerminal();
+  });
   document.addEventListener('keydown', (event) => {
     if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
     if (String(event.key || '').toLowerCase() !== 'b') return;
