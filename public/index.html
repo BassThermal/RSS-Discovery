@@ -9,6 +9,8 @@
 <body>
   <div class="app-shell">
     <aside class="app-sidebar">
+      <button class="sidebar-rail-toggle" id="sidebarRailToggleBtn" title="Collapse sidebar" aria-pressed="false">‹</button>
+      <div class="sidebar-inner">
       <div class="sidebar-panel sidebar-identity">
         <div class="brand-title">RSS Discovery</div>
         <div class="nav-list">
@@ -70,12 +72,12 @@
           <span id="readerScopeStories">0 visible articles</span>
         </div>
       </div>
+      </div>
     </aside>
 
     <main class="app-main">
       <header class="app-toolbar">
         <div class="toolbar-left">
-          <button class="btn micro ghost sidebar-toggle" id="sidebarToggleBtn" title="Hide left control panel" aria-pressed="false">Hide panel</button>
           <span class="eyebrow" id="toolbarMode">Find</span>
           <span class="sep"></span>
           <span class="mono" id="toolbarContext">Idle</span>
@@ -105,27 +107,35 @@
                 <option value="problem">Problem</option>
               </select>
               <div class="results-toolbar-actions">
-                <div class="export-group">
+                <div class="toolbar-group">
+                <div class="menu-group">
                   <button class="btn micro" id="exportBtn" title="Export included feeds. Ignored and deleted feeds are excluded.">Export included ▾</button>
-                  <div class="export-menu" id="exportMenu">
-                    <button class="btn micro ghost" id="exportOpmlBtn">OPML</button>
-                    <button class="btn micro ghost" id="copyUrlsBtn">Copy URLs</button>
-                    <button class="btn micro ghost" id="exportCsvBtn">CSV</button>
-                    <button class="btn micro ghost" id="exportJsonBtn">JSON</button>
+                  <div class="dropdown-menu" id="exportMenu">
+                    <button class="menu-item" id="exportOpmlBtn">OPML</button>
+                    <button class="menu-item" id="copyUrlsBtn">Copy URLs</button>
+                    <button class="menu-item" id="exportCsvBtn">CSV</button>
+                    <button class="menu-item" id="exportJsonBtn">JSON</button>
                   </div>
                 </div>
+                </div>
+                <div class="toolbar-group">
                 <button class="btn micro" id="toolbarPreviewBtn">Open reader</button>
-                <span class="pack-label mono" id="packLabel">Unsaved scan</span>
-                <button class="btn micro" id="packSaveBtn">Save</button>
-                <div class="export-group" id="packsGroup">
+                </div>
+                <div class="toolbar-group pack-toolbar-group" id="packsGroup">
+                  <span class="pack-label mono" id="packLabel">No saved pack</span>
+                  <button class="btn micro" id="packSaveBtn">Save pack</button>
+                <div class="menu-group">
                   <button class="btn micro" id="packsMenuBtn">Packs ▾</button>
-                  <div class="export-menu" id="packsMenu">
-                    <button class="btn micro ghost" id="packLoadBtn">Load pack</button>
-                    <button class="btn micro ghost" id="packSaveAsBtn">Save as new pack</button>
-                    <button class="btn micro ghost" id="packDeleteBtn">Delete saved pack</button>
+                  <div class="dropdown-menu" id="packsMenu">
+                    <button class="menu-item" id="packLoadBtn">Load pack</button>
+                    <button class="menu-item" id="packSaveAsBtn">Save as new pack</button>
+                    <button class="menu-item danger" id="packDeleteBtn">Delete current pack</button>
                   </div>
                 </div>
+                </div>
+                <div class="toolbar-group">
                 <button class="btn micro ghost" id="toolbarLogBtn">Scan log</button>
+                </div>
               </div>
             </div>
           </div>
@@ -164,6 +174,14 @@
       <dialog id="logDialog" class="overlay-dialog">
         <div class="pane">
           <div class="pane-head"><div class="pane-title">Scan log</div><div class="pane-meta mono" id="logCount">0 actions</div><button class="btn micro ghost" id="closeLogBtn">Close</button></div>
+          <div class="pane-toolbar">
+            <div class="log-filter-group" id="logFilterGroup">
+              <button class="btn micro active" data-log-filter="summary">Summary</button>
+              <button class="btn micro" data-log-filter="valid">Valid</button>
+              <button class="btn micro" data-log-filter="rejects">Warnings/Rejects</button>
+              <button class="btn micro" data-log-filter="all">All</button>
+            </div>
+          </div>
           <div class="pane-body terminal" id="terminal"></div>
         </div>
       </dialog>
@@ -176,7 +194,7 @@
         </div>
       </dialog>
 
-      <footer class="app-status">
+      <footer class="app-status hidden" id="appStatusFooter">
         <div class="status-group mono" id="statusLeft">FIND · Idle</div>
         <div class="status-group mono" id="statusRight">Session ready</div>
       </footer>
