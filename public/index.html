@@ -9,7 +9,7 @@
 <body>
   <div class="app-shell">
     <aside class="app-sidebar">
-      <button class="sidebar-rail-toggle" id="sidebarRailToggleBtn" title="Collapse sidebar" aria-pressed="false">‹</button>
+      <button class="sidebar-rail-toggle" id="sidebarRailToggleBtn" aria-label="Collapse sidebar" aria-pressed="false">‹</button>
       <div class="sidebar-inner">
       <div class="sidebar-panel sidebar-identity">
         <div class="brand-title">RSS Discovery</div>
@@ -119,11 +119,11 @@
                 </div>
                 </div>
                 <div class="toolbar-group">
-                <button class="btn micro" id="toolbarPreviewBtn">Open reader</button>
+                <button class="btn micro" id="toolbarPreviewBtn">Reader</button>
                 </div>
                 <div class="toolbar-group pack-toolbar-group" id="packsGroup">
-                  <span class="pack-label mono" id="packLabel">No saved pack</span>
-                  <button class="btn micro" id="packSaveBtn">Save pack</button>
+                  <span class="pack-label mono hidden" id="packLabel"></span>
+                  <button class="btn micro" id="packSaveBtn">Save</button>
                 <div class="menu-group">
                   <button class="btn micro" id="packsMenuBtn">Packs ▾</button>
                   <div class="dropdown-menu" id="packsMenu">

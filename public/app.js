@@ -137,7 +137,7 @@ function updateSidebarToggleUi() {
   if (!els.sidebarRailToggleBtn) return;
   const collapsed = !!state.sidebarCollapsed;
   els.sidebarRailToggleBtn.textContent = collapsed ? '›' : '‹';
-  els.sidebarRailToggleBtn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  els.sidebarRailToggleBtn.setAttribute('aria-label', collapsed ? 'Expand sidebar' : 'Collapse sidebar');
   els.sidebarRailToggleBtn.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
 }
 
@@ -401,13 +401,15 @@ const PACKS_STORAGE_KEY = 'rssDiscovery.packs.v1';
 function updatePackUi() {
   if (!els.packLabel) return;
   const current = state.savedPacks.find((p) => p.id === state.currentPackId);
-  if (!current && !state.session.feeds.length) els.packLabel.textContent = 'No saved pack';
-  else if (!current) els.packLabel.textContent = 'Unsaved pack';
-  else if (state.packDirty) els.packLabel.textContent = `${current.name} · unsaved changes`;
-  else els.packLabel.textContent = `Pack: ${current.name}`;
+  if (!current) {
+    els.packLabel.textContent = '';
+    els.packLabel.classList.add('hidden');
+  } else {
+    els.packLabel.classList.remove('hidden');
+    els.packLabel.textContent = state.packDirty ? `${current.name} · unsaved` : current.name;
+  }
   if (els.packSaveBtn) {
-    if (!current) els.packSaveBtn.textContent = 'Save pack';
-    else els.packSaveBtn.textContent = state.packDirty ? 'Save changes' : 'Save';
+    els.packSaveBtn.textContent = 'Save';
   }
   if (els.packDeleteBtn) els.packDeleteBtn.disabled = !current;
 }
