@@ -31,6 +31,7 @@
   --h30: 30px;
   --h32: 32px;
   --h36: 36px;
+  --shell-pad: 5px;
 }
 
 * { box-sizing: border-box; min-width: 0; }
@@ -48,8 +49,8 @@ body {
   height: 100%;
   display: grid;
   grid-template-columns: 236px 1fr;
-  gap: 8px;
-  padding: 8px;
+  gap: 6px;
+  padding: var(--shell-pad);
 }
 
 .app-toolbar,
@@ -77,7 +78,6 @@ body {
 
 .sidebar-panel { padding: 4px 0; background: transparent; border: 0; border-radius: 0; }
 .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-2); font-weight: 700; }
-.brand-title { font-size: 18px; font-weight: 800; line-height: 1; margin: 0; }
 .tiny { font-size: 11px; color: var(--text-2); }
 .mono { font-family: var(--font-mono); }
 .quiet { color: var(--muted); }
@@ -182,7 +182,6 @@ body.reader-active .app-shell { grid-template-columns: 252px 1fr; }
 body.reader-active .app-sidebar { gap: 6px; padding: 8px; }
 body.reader-active .sidebar-panel { padding: 4px 0; }
 body.reader-active .sidebar-identity { gap: 5px; }
-body.reader-active .brand-title { font-size: 14px; font-weight: 700; letter-spacing: .01em; }
 body.reader-active .nav-list { gap: 4px; }
 body.reader-active .nav-btn { height: var(--h28); padding: 0 8px; }
 body.reader-active .mode-panel[data-panel="reader"] { gap: 6px; padding-right: 0; }
@@ -600,7 +599,10 @@ body.reader-active .reader-layout .headline-row { padding-left: 8px; padding-rig
   max-width: 100%;
 }
 .overlay-dialog { width: min(920px, 92vw); max-height: 84vh; border: 1px solid var(--border-strong); background: var(--panel); color: inherit; padding: 0; }
-.overlay-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.overlay-dialog::backdrop { background: rgb(0 0 0 / 48%); backdrop-filter: blur(6px); }
+@supports not ((backdrop-filter: blur(1px))) {
+  .overlay-dialog::backdrop { background: rgb(0 0 0 / 62%); }
+}
 
 #logDialog {
   width: min(1180px, calc(100vw - 96px));
@@ -630,3 +632,26 @@ body.reader-active .reader-layout .headline-row { padding-left: 8px; padding-rig
 .saved-pack-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 10px; border-bottom:1px solid var(--border); }
 .saved-pack-name { font-weight:700; }
 .saved-pack-actions { display:flex; gap:6px; }
+
+
+.help-button {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  padding: 0;
+  font-weight: 700;
+  line-height: 1;
+}
+.help-button:hover {
+  background: var(--hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.help-dialog { width: min(760px, 92vw); }
+.help-body { padding: 10px; display: grid; gap: 6px; }
+.help-body p { margin: 0; line-height: 1.45; }

@@ -60,8 +60,11 @@ const els = {
   toolbarLogBtn: document.getElementById('toolbarLogBtn'),
   closeLogBtn: document.getElementById('closeLogBtn'),
   closeDetailsBtn: document.getElementById('closeDetailsBtn'),
+  helpBtn: document.getElementById('helpBtn'),
+  closeHelpBtn: document.getElementById('closeHelpBtn'),
   logDialog: document.getElementById('logDialog'),
   detailsDialog: document.getElementById('detailsDialog'),
+  helpDialog: document.getElementById('helpDialog'),
   backDiscoverBtn: document.getElementById('backDiscoverBtn'),
   logCount: document.getElementById('logCount'),
   terminal: document.getElementById('terminal'),
@@ -1169,6 +1172,8 @@ function bindEvents() {
   }));
   if (els.closeLogBtn) els.closeLogBtn.addEventListener('click', () => els.logDialog?.close?.());
   if (els.closeDetailsBtn) els.closeDetailsBtn.addEventListener('click', () => els.detailsDialog?.close?.());
+  if (els.helpBtn) els.helpBtn.addEventListener('click', () => els.helpDialog?.showModal?.());
+  if (els.closeHelpBtn) els.closeHelpBtn.addEventListener('click', () => els.helpDialog?.close?.());
   els.backDiscoverBtn?.addEventListener('click', () => setMode('discover'));
   [els.discoverFilter, els.discoverSearch].forEach((el) => el.addEventListener('input', () => {
     rebuildReaderData();
